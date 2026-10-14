@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owl Outfitters</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="demo.css">
+<script src="/recorder.js" data-endpoint="/api/ingest" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="index.html" id="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="18" rx="11" ry="12" fill="#e8a33d"/><circle cx="12" cy="15" r="4" fill="#fff"/><circle cx="20" cy="15" r="4" fill="#fff"/><circle cx="12" cy="15" r="2" fill="#2b2118"/><circle cx="20" cy="15" r="2" fill="#2b2118"/><path d="M14.5 19h3L16 22z" fill="#2b2118"/></svg>Owl Outfitters</a>
+  <ul class="nav" id="nav">
+    <li><a href="index.html" id="nav-home">Home</a></li>
+    <li id="nav-shop"><a href="#" id="nav-shop-link">Shop &#9662;</a>
+      <ul class="dropdown" id="nav-dropdown">
+        <li><a href="product.html" id="nav-lantern">Night Vision Lantern</a></li>
+        <li><a href="product.html#scarf" id="nav-scarf">Feather Down Scarf</a></li>
+        <li><a href="product.html#mug" id="nav-mug">Hoot Mug</a></li>
+      </ul>
+    </li>
+    <li><a href="checkout.html" id="nav-checkout">Checkout</a></li>
+  </ul>
+  <a class="cart-pill" href="checkout.html" id="cart-pill">Cart (<span class="cart-count">0</span>)</a>
+</header>
+<main class="wrap">
+  <section class="hero" id="hero">
+    <div>
+      <span class="badge-new" id="badge-new">New season</span>
+      <h1>Gear for night owls</h1>
+      <p>Lanterns, scarves and mugs for people who do their best work after midnight.</p>
+      <button class="btn" type="button" id="open-modal" data-open-modal>Join the newsletter</button>
+      <a class="btn secondary" href="product.html" id="hero-shop">Shop the lantern</a>
+    </div>
+    <img src="img/owl.svg" alt="Owl mascot" id="hero-img" width="240" height="240">
+  </section>
+
+  <h2>Featured</h2>
+  <div class="grid" id="products">
+    <article class="card" id="card-lantern">
+      <svg viewBox="0 0 200 120"><rect x="80" y="20" width="40" height="70" rx="8" fill="#e8a33d"/><rect x="88" y="10" width="24" height="12" rx="3" fill="#6b4329"/><circle cx="100" cy="55" r="14" fill="#fff6d6"/></svg>
+      <h3>Night Vision Lantern</h3>
+      <p class="price">$48</p>
+      <button class="btn" type="button" id="add-lantern" data-add="Night Vision Lantern">Add to cart</button>
+    </article>
+    <article class="card" id="card-scarf">
+      <svg viewBox="0 0 200 120"><path d="M40 40 Q100 10 160 40 L150 60 Q100 35 50 60 Z" fill="#8a5a3b"/><rect x="120" y="55" width="22" height="50" rx="4" fill="#8a5a3b"/></svg>
+      <h3>Feather Down Scarf</h3>
+      <p class="price">$36</p>
+      <button class="btn" type="button" id="add-scarf" data-add="Feather Down Scarf">Add to cart</button>
+    </article>
+    <article class="card" id="card-mug">
+      <svg viewBox="0 0 200 120"><rect x="70" y="30" width="56" height="64" rx="8" fill="#5b7290"/><path d="M126 46 h14 a12 12 0 0 1 0 24 h-14" stroke="#5b7290" stroke-width="8" fill="none"/></svg>
+      <h3>Hoot Mug</h3>
+      <p class="price">$18</p>
+      <button class="btn" type="button" id="add-mug" data-add="Hoot Mug">Add to cart</button>
+    </article>
+  </div>
+
+  <h2>Why owls?</h2>
+  <div class="accordion" id="faq">
+    <details id="faq-1"><summary>Do you ship at night?</summary><div>Every order leaves the nest before sunrise.</div></details>
+    <details id="faq-2"><summary>What is the return policy?</summary><div>Thirty nights, no questions asked.</div></details>
+    <details id="faq-3"><summary>Are the scarves real feathers?</summary><div>No owls were harmed. It is recycled polyester.</div></details>
+  </div>
+
+  <div class="tall" id="tall">You scrolled all the way down. Hoot!</div>
+</main>
+<div class="modal-backdrop" id="modal">
+  <div class="modal" role="dialog" aria-label="Newsletter">
+    <h3>Join the Night Shift</h3>
+    <p>Weekly deals for nocturnal creatures.</p>
+    <button class="btn" type="button" id="modal-confirm" data-close-modal>Sign me up</button>
+    <button class="btn secondary" type="button" id="modal-close" data-close-modal>Close</button>
+  </div>
+</div>
+<footer>Owl Outfitters is a demo shop for Replayowl. Nothing here is for sale.</footer>
+<script src="demo.js"></script>
+</body>
+</html>

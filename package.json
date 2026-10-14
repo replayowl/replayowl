@@ -1,0 +1,38 @@
+{
+  "name": "replayowl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Session recording and replay with a focus on playback quality",
+  "license": "AGPL-3.0-only",
+  "author": "replayowl <oss@replayowl.com> (https://replayowl.com)",
+  "homepage": "https://replayowl.com",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "node scripts/build.ts --watch",
+    "start": "node scripts/build.ts && node src/server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "PG_TEST_URL=${PG_TEST_URL:-postgres://replayowl:replayowl@127.0.0.1:15432/replayowl} sh -c 'node --test tests/unit/*.test.ts && node scripts/build.ts && playwright test'",
+    "test:live": "node scripts/build.ts && LIVE_URLS=\"https://en.wikipedia.org/wiki/Owl https://react.dev/ https://github.com/microsoft/playwright\" playwright test live-site",
+    "dev:worker": "node scripts/build.ts && wrangler dev",
+    "deploy": "node scripts/build.ts && wrangler deploy",
+    "test:s3": "PG_TEST_URL=${PG_TEST_URL:-postgres://replayowl:replayowl@127.0.0.1:15432/replayowl} S3_TEST_ENDPOINT=${S3_TEST_ENDPOINT:-http://127.0.0.1:19000} S3_TEST_KEY=${S3_TEST_KEY:-replayowl} S3_TEST_SECRET=${S3_TEST_SECRET:-replayowl-secret-key} sh -c 'node --test tests/unit/*.test.ts && node scripts/build.ts && playwright test'",
+    "test:worker": "TARGET=worker PG_TEST_URL=${PG_TEST_URL:-postgres://replayowl:replayowl@127.0.0.1:15432/replayowl} S3_TEST_ENDPOINT=${S3_TEST_ENDPOINT:-http://127.0.0.1:19000} S3_TEST_KEY=${S3_TEST_KEY:-replayowl} S3_TEST_SECRET=${S3_TEST_SECRET:-replayowl-secret-key} sh -c 'node scripts/build.ts && playwright test auth roundtrip search --workers 1 && WORKER_DB=pg playwright test auth roundtrip search --workers 1'",
+    "test:remote": "TARGET=remote playwright test roundtrip auth search --workers 1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "esbuild": "0.28.2",
+    "typescript": "~5.9.0",
+    "wrangler": "^4.149.0"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "pg": "^8.23.1"
+  }
+}

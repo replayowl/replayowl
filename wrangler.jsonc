@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "replayowl",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  // node-postgres needs the Node.js APIs; D1 deployments do not use them but the bundle always includes pg.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/public",
+    "binding": "ASSETS",
+    // The Worker decides which pages need a sign-in, then fetches files from ASSETS itself.
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "vars": {
+    // Any S3-compatible service. R2: https://<account-id>.r2.cloudflarestorage.com with region "auto".
+    "S3_ENDPOINT": "https://<account-id>.r2.cloudflarestorage.com",
+    "S3_BUCKET": "replayowl",
+    "S3_REGION": "auto",
+    "S3_PREFIX": "",
+    "S3_PATH_STYLE": "true"
+  },
+  // Database, one of:
+  // "d1_databases": [{ "binding": "DB", "database_name": "replayowl", "database_id": "<id from wrangler d1 create>" }],
+  // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<id from wrangler hyperdrive create>" }],
+  // Optional OAuth sign-in: add OAUTH_CLIENT_ID, OAUTH_ISSUER (or the three OAUTH_*_URL endpoints),
+  // OAUTH_ALLOW and optionally OAUTH_NAME / OAUTH_SCOPES to "vars" above. See "OAuth sign-in" in README.md.
+  // Secrets (wrangler secret put <NAME>): S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and optionally SETUP_TOKEN
+  // and OAUTH_CLIENT_SECRET.
+}

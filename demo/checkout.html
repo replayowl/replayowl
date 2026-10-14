@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout - Owl Outfitters</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="demo.css">
+<script src="/recorder.js" data-endpoint="/api/ingest" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="index.html" id="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="18" rx="11" ry="12" fill="#e8a33d"/><circle cx="12" cy="15" r="4" fill="#fff"/><circle cx="20" cy="15" r="4" fill="#fff"/><circle cx="12" cy="15" r="2" fill="#2b2118"/><circle cx="20" cy="15" r="2" fill="#2b2118"/><path d="M14.5 19h3L16 22z" fill="#2b2118"/></svg>Owl Outfitters</a>
+  <ul class="nav" id="nav">
+    <li><a href="index.html" id="nav-home">Home</a></li>
+    <li id="nav-shop"><a href="#" id="nav-shop-link">Shop &#9662;</a>
+      <ul class="dropdown" id="nav-dropdown">
+        <li><a href="product.html" id="nav-lantern">Night Vision Lantern</a></li>
+        <li><a href="product.html#scarf" id="nav-scarf">Feather Down Scarf</a></li>
+        <li><a href="product.html#mug" id="nav-mug">Hoot Mug</a></li>
+      </ul>
+    </li>
+    <li><a href="checkout.html" id="nav-checkout">Checkout</a></li>
+  </ul>
+  <a class="cart-pill" href="checkout.html" id="cart-pill">Cart (<span class="cart-count">0</span>)</a>
+</header>
+<main class="wrap">
+  <h1>Checkout</h1>
+  <h2>Your cart</h2>
+  <ul class="cart-list" id="cart-list"></ul>
+  <div class="cart-actions">
+    <button class="btn secondary" type="button" id="cart-add" data-add="Hoot Mug">Add a mug</button>
+    <button class="btn secondary" type="button" id="cart-reorder">Move last to top</button>
+    <button class="btn secondary" type="button" id="cart-highlight">Highlight first</button>
+    <button class="btn secondary" type="button" id="cart-style" onclick="addRuntimeRule('.cart-list li { font-weight: 600; }'); toast('Style rule inserted')">Bold items</button>
+  </div>
+
+  <h2>Details</h2>
+  <form class="checkout" id="checkout-form" onsubmit="event.preventDefault(); toast('Order placed. Thank you!');">
+    <div class="field"><label for="name">Full name</label><input type="text" id="name" name="name" placeholder="Barn Owl"></div>
+    <div class="field"><label for="email">Email</label><input type="email" id="email" name="email" placeholder="you@example.com"></div>
+    <div class="field"><label for="password">Password</label><input type="password" id="password" name="password"></div>
+    <div class="field"><label for="card">Card number</label><input type="text" id="card" name="card-number" inputmode="numeric" placeholder="4111 1111 1111 1111"></div>
+    <div class="field"><label for="coupon">Coupon</label><input type="text" id="coupon" name="coupon" data-ro-unmask placeholder="NIGHT10"></div>
+    <div class="field"><label for="shipping">Shipping</label>
+      <select id="shipping" name="shipping"><option value="standard">Standard (3 nights)</option><option value="express">Express (1 night)</option><option value="owl">Owl post</option></select>
+    </div>
+    <div class="field full"><label for="gift">Gift note</label><textarea id="gift" name="gift" rows="3" data-ro-unmask placeholder="Write something nice"></textarea></div>
+    <div class="field">
+      <label>Wrapping</label>
+      <label><input type="radio" name="wrap" id="wrap-none" value="none" checked> None</label>
+      <label><input type="radio" name="wrap" id="wrap-paper" value="paper"> Paper</label>
+      <label><input type="radio" name="wrap" id="wrap-box" value="box"> Gift box</label>
+    </div>
+    <div class="field"><label><input type="checkbox" id="terms" name="terms"> I accept the terms</label></div>
+    <div class="field full account-box" id="account-box" data-ro-mask>Account 4417-2291, balance $1,234.56, member since 2019</div>
+    <div class="field"><img class="secret-photo" id="secret-photo" src="img/avatar.svg" alt="Your photo" data-ro-block width="64" height="64"></div>
+    <div class="field full"><button class="btn" type="submit" id="place-order">Place order</button></div>
+  </form>
+</main>
+<footer>Owl Outfitters is a demo shop for Replayowl. Nothing here is for sale.</footer>
+<script src="demo.js"></script>
+</body>
+</html>

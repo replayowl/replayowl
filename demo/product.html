@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night Vision Lantern - Owl Outfitters</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="demo.css">
+<script src="/recorder.js" data-endpoint="/api/ingest" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="index.html" id="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="18" rx="11" ry="12" fill="#e8a33d"/><circle cx="12" cy="15" r="4" fill="#fff"/><circle cx="20" cy="15" r="4" fill="#fff"/><circle cx="12" cy="15" r="2" fill="#2b2118"/><circle cx="20" cy="15" r="2" fill="#2b2118"/><path d="M14.5 19h3L16 22z" fill="#2b2118"/></svg>Owl Outfitters</a>
+  <ul class="nav" id="nav">
+    <li><a href="index.html" id="nav-home">Home</a></li>
+    <li id="nav-shop"><a href="#" id="nav-shop-link">Shop &#9662;</a>
+      <ul class="dropdown" id="nav-dropdown">
+        <li><a href="product.html" id="nav-lantern">Night Vision Lantern</a></li>
+        <li><a href="product.html#scarf" id="nav-scarf">Feather Down Scarf</a></li>
+        <li><a href="product.html#mug" id="nav-mug">Hoot Mug</a></li>
+      </ul>
+    </li>
+    <li><a href="checkout.html" id="nav-checkout">Checkout</a></li>
+  </ul>
+  <a class="cart-pill" href="checkout.html" id="cart-pill">Cart (<span class="cart-count">0</span>)</a>
+</header>
+<main class="wrap">
+  <section class="hero adopted-outline" id="product-hero">
+    <div>
+      <h1>Night Vision Lantern</h1>
+      <p class="price" id="product-price">$48</p>
+      <p>Rating: <owl-rating id="rating" value="3"></owl-rating></p>
+      <button class="btn" type="button" id="add-product" data-add="Night Vision Lantern">Add to cart</button>
+      <button class="btn danger" type="button" id="buggy-btn">Buggy button</button>
+    </div>
+    <img src="img/owl.svg" alt="Lantern" id="product-img" width="220" height="220">
+  </section>
+
+  <div class="tabs" role="tablist" id="tabs">
+    <button class="tab" role="tab" type="button" id="tab-details" aria-controls="panel-details" aria-selected="true">Details</button>
+    <button class="tab" role="tab" type="button" id="tab-specs" aria-controls="panel-specs" aria-selected="false">Specs</button>
+    <button class="tab" role="tab" type="button" id="tab-shipping" aria-controls="panel-shipping" aria-selected="false">Shipping</button>
+  </div>
+  <div class="tab-panel" id="panel-details">A warm amber glow that will not wake the neighbours.</div>
+  <div class="tab-panel" id="panel-specs" hidden>Brightness: 120 lumens. Battery: 14 hours. Weight: 380 g.</div>
+  <div class="tab-panel" id="panel-shipping" hidden>Ships in a recycled cardboard nest within two nights.</div>
+
+  <h2>Reviews</h2>
+  <div class="reviews" id="reviews"><ul id="reviews-list"></ul></div>
+  <script>
+    (function () {
+      var names = ["Barney", "Hedwig", "Ollie", "Athena", "Hootie", "Luna", "Sage", "Willow", "Fern", "Pip", "Moss", "Juniper"];
+      var ul = document.getElementById("reviews-list");
+      names.forEach(function (n, i) {
+        var li = document.createElement("li");
+        li.id = "review-" + i;
+        li.textContent = n + ": " + (i % 3 === 0 ? "Bright and cozy." : i % 3 === 1 ? "Perfect for late reading." : "Would hoot again.");
+        ul.appendChild(li);
+      });
+    })();
+  </script>
+  <div class="tall" id="tall">End of product page.</div>
+</main>
+<footer>Owl Outfitters is a demo shop for Replayowl. Nothing here is for sale.</footer>
+<script src="demo.js"></script>
+</body>
+</html>

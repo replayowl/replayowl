@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions - Replayowl</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11.5' cy='16' r='6' fill='%23f2a93b'/%3E%3Ccircle cx='20.5' cy='16' r='6' fill='%23f2a93b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/dashboard/app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/" id="brand">Replayowl</a>
+  <span class="grow"></span>
+  <a class="btn ghost-dark" href="/demo/" target="_blank" rel="noopener">Open demo shop</a>
+  <button class="btn ghost-dark" id="account-btn" type="button">Change password</button>
+  <button class="btn ghost-dark" id="logout-btn" type="button">Sign out</button>
+</header>
+<dialog class="account-dialog" id="account">
+  <form id="pw-form" novalidate>
+    <h2 id="pw-title">Change password</h2>
+    <p class="lead">Every other signed-in browser will be signed out.</p>
+    <label class="field" id="pw-current-field"><span>Current password</span><input id="pw-current" type="password" autocomplete="current-password"></label>
+    <label class="field"><span>New password</span><input id="pw-new" type="password" autocomplete="new-password" minlength="8"></label>
+    <label class="field"><span>Repeat new password</span><input id="pw-confirm" type="password" autocomplete="new-password"></label>
+    <p class="form-error" id="pw-error" role="alert" hidden></p>
+    <p class="form-ok" id="pw-ok" role="status" hidden>Password changed.</p>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="pw-cancel">Close</button>
+      <button class="btn primary" type="submit" id="pw-submit">Change password</button>
+    </div>
+  </form>
+</dialog>
+<main class="list-page">
+  <div class="list-head">
+    <div>
+      <h1>Sessions</h1>
+      <p id="subtitle">Recorded visits, newest first.</p>
+    </div>
+  </div>
+  <form class="filters" id="search-form" role="search" novalidate>
+    <input class="search" id="q-user" type="search" placeholder="User ID" aria-label="User ID" autocomplete="off">
+    <input class="search" id="q-url" type="search" placeholder="Visited page, e.g. /checkout" aria-label="Visited page" autocomplete="off">
+    <select class="select" id="q-mode" aria-label="How the page matches">
+      <option value="prefix">starts with</option>
+      <option value="exact">is exactly</option>
+      <option value="contains">contains</option>
+    </select>
+    <button class="btn" type="button" id="more-btn" aria-expanded="false" aria-controls="more">More filters</button>
+    <button class="btn primary" type="submit">Search</button>
+    <button class="btn" type="button" id="clear-btn" hidden>Clear</button>
+    <div class="more" id="more" hidden>
+      <label><span>Started after</span><input type="datetime-local" id="q-from"></label>
+      <label><span>Started before</span><input type="datetime-local" id="q-to"></label>
+      <label><span>Min duration (s)</span><input type="number" min="0" step="1" id="q-min-dur"></label>
+      <label><span>Max duration (s)</span><input type="number" min="0" step="1" id="q-max-dur"></label>
+      <label><span>Min pages</span><input type="number" min="1" step="1" id="q-min-pages"></label>
+      <label><span>Device</span>
+        <select id="q-device">
+          <option value="">Any</option>
+          <option value="desktop">Desktop</option>
+          <option value="mobile">Mobile</option>
+          <option value="tablet">Tablet</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="q-errors"> With errors</label>
+      <label class="check"><input type="checkbox" id="q-rage"> With rage clicks</label>
+    </div>
+  </form>
+  <div class="sessions" id="sessions"><div class="empty-panel">Loading sessions</div></div>
+</main>
+<script type="module" src="/dashboard/list.js"></script>
+</body>
+</html>
