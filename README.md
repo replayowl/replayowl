@@ -18,6 +18,18 @@ The first visit to http://127.0.0.1:8790/ asks you to set the admin password; si
 
 The tables are created automatically on the first request. Recordings are stored as files (`DATA_DIR`, default `./data`); when `S3_BUCKET` and related variables are set, S3 is used instead. Other environment variables: `DATABASE_URL` (required), `PORT` (default 8790), `HOST` (default 127.0.0.1), `SETUP_TOKEN`, and the `OAUTH_*` variables described under [OAuth sign-in](#oauth-sign-in).
 
+## Docker
+
+`docker compose up -d` builds the image and starts Replayowl with Postgres at http://127.0.0.1:8790/ (change the host port with `REPLAYOWL_PORT`). Recordings go to the `recordings` volume, or to S3 when `S3_BUCKET` is set. `SETUP_TOKEN`, `S3_*`, `OAUTH_*` and `POSTGRES_PASSWORD` are read from a `.env` file next to `docker-compose.yml` when present.
+
+To run the image on its own against an existing Postgres:
+
+```bash
+docker run -d -p 8790:8790 -v replayowl-data:/data -e DATABASE_URL=postgres://user:pass@host:5432/replayowl replayowl/replayowl:latest
+```
+
+The image listens on `0.0.0.0:8790`, stores recordings in `/data` and has a health check on `/api/auth/status`.
+
 ## Deploying to Cloudflare Workers
 
 The Worker handles the collector endpoint, the dashboard API and sign-in checks; the dashboard pages, the recorder script and the demo shop are uploaded alongside as static assets (Workers Static Assets, with `run_worker_first` so the Worker decides whether sign-in is required). Recordings live in any S3-compatible storage (AWS S3, Cloudflare R2, MinIO, RustFS, Aliyun OSS and so on), accessed with aws4fetch signatures. Session summaries, search indexes and the admin password live in a database: Cloudflare D1, or Postgres through Hyperdrive. `nodejs_compat` is on in `wrangler.jsonc` because the Postgres driver (`pg`) needs it.

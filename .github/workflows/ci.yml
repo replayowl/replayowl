@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PG_TEST_URL: postgres://replayowl:replayowl@127.0.0.1:15432/replayowl
+  S3_TEST_ENDPOINT: http://127.0.0.1:19000
+  S3_TEST_KEY: replayowl
+  S3_TEST_SECRET: replayowl-secret-key
+
+jobs:
+  test:
+    name: Test (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [test, "test:s3", "test:worker"]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: replayowl
+          POSTGRES_PASSWORD: replayowl
+        ports: ["15432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U replayowl"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      s3:
+        image: rustfs/rustfs
+        env:
+          RUSTFS_ACCESS_KEY: replayowl
+          RUSTFS_SECRET_KEY: replayowl-secret-key
+        ports: ["19000:9000"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+        if: matrix.suite == 'test'
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Wait for S3
+        run: |
+          for _ in $(seq 60); do
+            curl -s -o /dev/null "$S3_TEST_ENDPOINT" && exit 0
+            sleep 1
+          done
+          echo "S3 did not start" && exit 1
+      - run: npm run ${{ matrix.suite }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-${{ strategy.job-index }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_IMAGE || 'replayowl/replayowl' }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Replayowl
+            org.opencontainers.image.url=https://replayowl.com
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
+            org.opencontainers.image.vendor=replayowl
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Sync README to Docker Hub
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ vars.DOCKERHUB_IMAGE || 'replayowl/replayowl' }}
+          short-description: Self-hosted session recording and replay for websites. https://replayowl.com
+          readme-filepath: DOCKERHUB.md

@@ -143,7 +143,7 @@ test("setup token", async ({ page }) => {
     await page.click("#submit");
     await expect(page).toHaveURL(url + "/");
   } finally {
-    await new Promise((r) => server.close(r));
+    await new Promise((r) => { server.close(r); server.closeAllConnections(); });
     await db.close();
     await fresh.drop();
     fs.rmSync(dir, { recursive: true, force: true });

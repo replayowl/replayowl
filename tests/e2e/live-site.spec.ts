@@ -36,7 +36,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await new Promise((r) => server.close(r));
+  await new Promise((r) => { server.close(r); server.closeAllConnections(); });
   await db.close();
   await dropDb();
   fs.rmSync(dataDir, { recursive: true, force: true });

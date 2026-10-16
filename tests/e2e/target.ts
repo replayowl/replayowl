@@ -137,7 +137,7 @@ export async function startTarget(): Promise<Target> {
     base: "http://127.0.0.1:" + (server.address() as AddressInfo).port,
     name: name + "+pg",
     stop: async () => {
-      await new Promise((r) => server.close(r));
+      await new Promise((r) => { server.close(r); server.closeAllConnections(); });
       await db.close();
       await fresh.drop();
       cleanup();

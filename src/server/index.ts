@@ -120,4 +120,14 @@ export function startServer(opts: ServerOptions = {}): http.Server {
   return server;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) startServer();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const server = startServer();
+  // As PID 1 in a container Node has no default SIGTERM handler, so stop explicitly.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => {
+      server.close(() => process.exit(0));
+      server.closeIdleConnections();
+      setTimeout(() => process.exit(0), 5000).unref();
+    });
+  }
+}

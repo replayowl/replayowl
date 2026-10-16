@@ -1,0 +1,40 @@
+# Replayowl with Postgres. Usage: docker compose up -d, then open http://127.0.0.1:8790/
+# Recordings go to the recordings volume unless S3_BUCKET is set.
+services:
+  app:
+    build: .
+    image: replayowl/replayowl:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${REPLAYOWL_PORT:-8790}:8790"
+    # SETUP_TOKEN, S3_* and OAUTH_* variables are read from .env when present.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://replayowl:${POSTGRES_PASSWORD:-replayowl}@db:5432/replayowl
+    volumes:
+      - recordings:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: replayowl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replayowl}
+      POSTGRES_DB: replayowl
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U replayowl -d replayowl"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  recordings:
+  pgdata:
