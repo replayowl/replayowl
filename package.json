@@ -7,6 +7,10 @@
   "license": "AGPL-3.0-only",
   "author": "replayowl <oss@replayowl.com> (https://replayowl.com)",
   "homepage": "https://replayowl.com",
+  "exports": {
+    "./build": "./scripts/build.ts",
+    "./*": "./src/*"
+  },
   "engines": {
     "node": ">=24"
   },

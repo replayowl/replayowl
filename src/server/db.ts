@@ -45,11 +45,14 @@ export interface Db {
   isUniqueViolation(err: unknown): boolean;
 }
 
-export function schema(d: Dialect): string[] {
-  const t = d.bytesText;
-  return [
-    `CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
+/** Project of everything recorded by a single-project (self-hosted) deployment. */
+export const DEFAULT_PROJECT = "default";
+
+// Session tables keyed by project, so one database can hold many projects (the hosted service).
+const SESSION_TABLES = (t: string) => [
+  `CREATE TABLE IF NOT EXISTS sessions (
+      project_id TEXT NOT NULL,
+      id TEXT NOT NULL,
       started_at BIGINT NOT NULL,
       ended_at BIGINT NOT NULL,
       duration BIGINT NOT NULL,
@@ -66,33 +69,46 @@ export function schema(d: Dialect): string[] {
       clicks INTEGER NOT NULL,
       rage_clicks INTEGER NOT NULL,
       errors INTEGER NOT NULL,
-      inputs INTEGER NOT NULL
+      inputs INTEGER NOT NULL,
+      PRIMARY KEY (project_id, id)
     )`,
-    "CREATE INDEX IF NOT EXISTS sessions_started ON sessions (started_at DESC, id DESC)",
-    `CREATE TABLE IF NOT EXISTS session_pages (
+  `CREATE TABLE IF NOT EXISTS session_pages (
+      project_id TEXT NOT NULL,
       session_id TEXT NOT NULL,
       view TEXT NOT NULL,
       ts BIGINT NOT NULL,
       host ${t} NOT NULL,
       path ${t} NOT NULL,
       url TEXT NOT NULL,
-      PRIMARY KEY (session_id, view)
+      PRIMARY KEY (project_id, session_id, view)
     )`,
-    "CREATE INDEX IF NOT EXISTS session_pages_path ON session_pages (path, session_id)",
-    "CREATE INDEX IF NOT EXISTS session_pages_host_path ON session_pages (host, path, session_id)",
-    `CREATE TABLE IF NOT EXISTS session_users (
+  `CREATE TABLE IF NOT EXISTS session_users (
+      project_id TEXT NOT NULL,
       session_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
-      PRIMARY KEY (session_id, user_id)
+      PRIMARY KEY (project_id, session_id, user_id)
     )`,
-    "CREATE INDEX IF NOT EXISTS session_users_user ON session_users (user_id, session_id)",
-    `CREATE TABLE IF NOT EXISTS batches (
+  `CREATE TABLE IF NOT EXISTS batches (
+      project_id TEXT NOT NULL,
       session_id TEXT NOT NULL,
       view TEXT NOT NULL,
       seq INTEGER NOT NULL,
       tail TEXT NOT NULL,
-      PRIMARY KEY (session_id, view, seq)
+      PRIMARY KEY (project_id, session_id, view, seq)
     )`,
+];
+
+export function schema(d: Dialect): string[] {
+  const [sessions, pages, users, batches] = SESSION_TABLES(d.bytesText);
+  return [
+    sessions,
+    "CREATE INDEX IF NOT EXISTS sessions_project_started ON sessions (project_id, started_at DESC, id DESC)",
+    pages,
+    "CREATE INDEX IF NOT EXISTS session_pages_project_path ON session_pages (project_id, path, session_id)",
+    "CREATE INDEX IF NOT EXISTS session_pages_project_host_path ON session_pages (project_id, host, path, session_id)",
+    users,
+    "CREATE INDEX IF NOT EXISTS session_users_project_user ON session_users (project_id, user_id, session_id)",
+    batches,
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
   ];
 }
@@ -113,6 +129,35 @@ async function schemaPresent(db: Db): Promise<boolean> {
   return Number(rows[0] && rows[0].n) === names.length;
 }
 
+/** True when the sessions table exists from a version without projects. */
+async function needsProjects(db: Db): Promise<boolean> {
+  const sql = db.dialect.name === "pg"
+    ? `SELECT COUNT(*) AS n FROM information_schema.columns c WHERE c.table_schema = current_schema() AND c.table_name = 'sessions' AND c.column_name = 'id'
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns p WHERE p.table_schema = c.table_schema AND p.table_name = 'sessions' AND p.column_name = 'project_id')`
+    // D1 does not allow every PRAGMA, so read the table definition instead.
+    : "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'sessions' AND sql NOT LIKE '%project_id%'";
+  const rows = await db.all<{ n: number | string }>(sql);
+  return Number(rows[0] && rows[0].n) > 0;
+}
+
+/**
+ * Moves session tables from a version without projects into the default project, in one transaction.
+ * The new tables are built under temporary names first: renaming the old ones instead would keep their
+ * constraint names (sessions_pkey on Postgres), which the new tables then could not take.
+ */
+export function migrateToProjects(d: Dialect): Statement[] {
+  const names = ["sessions", "session_pages", "session_users", "batches"];
+  const tables = SESSION_TABLES(d.bytesText);
+  return [
+    ...names.map((t, i) => ({ sql: tables[i].replace(`IF NOT EXISTS ${t} (`, `${t}_v2 (`) })),
+    ...names.map((t) => ({ sql: `INSERT INTO ${t}_v2 SELECT CAST(? AS TEXT), ${t}.* FROM ${t}`, params: [DEFAULT_PROJECT] })),
+    ...names.map((t) => ({ sql: `DROP TABLE ${t}` })),
+    ...names.map((t) => ({ sql: `ALTER TABLE ${t}_v2 RENAME TO ${t}` })),
+    // Postgres keeps the constraint name of the temporary table; give it the usual one back.
+    ...(d.name === "pg" ? names.map((t) => ({ sql: `ALTER TABLE ${t} RENAME CONSTRAINT ${t}_v2_pkey TO ${t}_pkey` })) : []),
+  ];
+}
+
 /**
  * Wraps a database so the tables exist before its first statement (checked once per process or isolate).
  * Existing tables are detected first: CREATE INDEX IF NOT EXISTS still takes a lock on Postgres that blocks writers.
@@ -123,6 +168,7 @@ export function withSchema(db: Db): Db {
   let done = false;
   const create = async () => {
     if (await schemaPresent(db)) return;
+    if (await needsProjects(db)) await db.batch(migrateToProjects(db.dialect));
     for (const sql of schema(db.dialect)) await db.run(sql);
   };
   // Two processes creating the tables at once can make Postgres report a duplicate catalog entry;

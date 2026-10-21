@@ -1,6 +1,7 @@
 import type { IngestBatch, LogEvent, ReplayEvent, SessionData, SessionSummary } from "../shared/protocol.ts";
 import { createPlayer, formatTime, type Marker } from "../player/index.ts";
 import { api, errorText } from "./api.ts";
+import { listPage, sessionsApi } from "./config.ts";
 import { OWL_SVG, describeUA, formatDuration, h, pathOf, svg } from "./util.ts";
 
 const ICONS: Record<string, string> = {
@@ -14,6 +15,7 @@ const ICONS: Record<string, string> = {
 
 const $ = (id: string) => document.getElementById(id)!;
 $("brand").append(svg(OWL_SVG));
+($("brand") as HTMLAnchorElement).href = listPage;
 
 // Shortcut popover.
 const keysBtn = $("keys-btn");
@@ -45,7 +47,8 @@ for (const tab of tabs) {
 async function main() {
   const id = new URLSearchParams(location.search).get("id");
   if (!id) {
-    $("player").innerHTML = '<div class="loading">No session selected. <a href="/">Back to sessions</a></div>';
+    $("player").innerHTML = "";
+    $("player").append(h("div", { class: "loading" }, "No session selected. ", h("a", { href: listPage }, "Back to sessions")));
     return;
   }
   let data: SessionData;
@@ -184,7 +187,7 @@ async function main() {
 
 /** Downloads every stored upload batch of a session and merges them into one ordered event list. */
 async function loadSession(id: string): Promise<SessionData> {
-  const base = "/api/sessions/" + encodeURIComponent(id);
+  const base = sessionsApi + "/" + encodeURIComponent(id);
   const res = await api(base);
   if (!res.ok) throw new Error(await errorText(res));
   const index: { summary: SessionSummary; parts: string[] } = await res.json();

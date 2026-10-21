@@ -4,10 +4,13 @@
 //
 // Summaries, page views and user ids live in the database for listing and search. The player
 // downloads the parts directly and merges them, so serving a session costs the server no parsing.
+//
+// A store serves one project. Its object storage holds only that project (a bucket or key prefix of
+// its own); its database rows carry the project id, so many projects can share one database.
 
 import { MAX_USERS_PER_SESSION, batchDelta, deviceOf } from "../shared/analyze.ts";
 import type { ClickEvent, Device, IngestBatch, SessionSummary } from "../shared/protocol.ts";
-import type { Db, Dialect, Param, Statement } from "./db.ts";
+import { DEFAULT_PROJECT, type Db, type Dialect, type Param, type Statement } from "./db.ts";
 import { MAX_URL, encodeCursor, splitUrl, type SessionQuery } from "./search.ts";
 import { listAll, pool, type ObjectStorage } from "./storage.ts";
 
@@ -79,9 +82,9 @@ const EARLIER = "excluded.first_ts > 0 AND (sessions.first_ts = 0 OR excluded.fi
 function upsertSession(d: Dialect): string {
   const first = (col: string) => `${col} = CASE WHEN ${EARLIER} THEN excluded.${col} ELSE sessions.${col} END`;
   const add = (col: string) => `${col} = sessions.${col} + excluded.${col}`;
-  return `INSERT INTO sessions (id, started_at, ended_at, duration, first_url, first_ts, last_url, last_ts, pages, ua, device, w, h, events, clicks, rage_clicks, errors, inputs)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (id) DO UPDATE SET
+  return `INSERT INTO sessions (project_id, id, started_at, ended_at, duration, first_url, first_ts, last_url, last_ts, pages, ua, device, w, h, events, clicks, rage_clicks, errors, inputs)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (project_id, id) DO UPDATE SET
   started_at = ${d.least("sessions.started_at", "excluded.started_at")},
   ended_at = ${d.greatest("sessions.ended_at", "excluded.ended_at")},
   duration = ${d.greatest("sessions.ended_at", "excluded.ended_at")} - ${d.least("sessions.started_at", "excluded.started_at")},
@@ -102,11 +105,13 @@ function parseTail(raw: string | undefined): ClickEvent[] {
 
 export class SessionStore {
   readonly storage: ObjectStorage;
+  readonly project: string;
   private db: Db;
 
-  constructor(storage: ObjectStorage, db: Db) {
+  constructor(storage: ObjectStorage, db: Db, project: string = DEFAULT_PROJECT) {
     this.storage = storage;
     this.db = db;
+    this.project = project;
   }
 
   /**
@@ -123,19 +128,20 @@ export class SessionStore {
 
     // Batches of one page view are uploaded one at a time, so the previous one is already stored.
     const prev = batch.seq > 0
-      ? await this.db.all<{ tail: string }>("SELECT tail FROM batches WHERE session_id = ? AND view = ? AND seq = ?", [batch.sid, batch.view, batch.seq - 1])
+      ? await this.db.all<{ tail: string }>("SELECT tail FROM batches WHERE project_id = ? AND session_id = ? AND view = ? AND seq = ?", [this.project, batch.sid, batch.view, batch.seq - 1])
       : [];
     const d = batchDelta(batch.events, parseTail(prev[0] && prev[0].tail));
     const pages = [...d.pages].sort((a, b) => a.ts - b.ts);
     const first = pages[0];
     const last = pages[pages.length - 1];
     const ua = first ? first.ua.slice(0, 1024) : "";
+    const pid = this.project;
     const statements: Statement[] = [
-      { sql: "INSERT INTO batches (session_id, view, seq, tail) VALUES (?, ?, ?, ?)", params: [batch.sid, batch.view, batch.seq, JSON.stringify(d.tail)] },
+      { sql: "INSERT INTO batches (project_id, session_id, view, seq, tail) VALUES (?, ?, ?, ?, ?)", params: [pid, batch.sid, batch.view, batch.seq, JSON.stringify(d.tail)] },
       {
         sql: upsertSession(this.db.dialect),
         params: [
-          batch.sid, d.startedAt, d.endedAt, d.endedAt - d.startedAt,
+          pid, batch.sid, d.startedAt, d.endedAt, d.endedAt - d.startedAt,
           first ? first.url.slice(0, MAX_URL) : "", first ? first.ts : 0, last ? last.url.slice(0, MAX_URL) : "", last ? last.ts : 0,
           pages.length, ua, deviceOf(ua), first ? first.w : 0, first ? first.h : 0,
           d.events, d.clicks, d.rageClicks, d.errors, d.inputs,
@@ -145,15 +151,15 @@ export class SessionStore {
     for (const p of pages) {
       const parts = splitUrl(p.url);
       statements.push({
-        sql: "INSERT INTO session_pages (session_id, view, ts, host, path, url) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-        params: [batch.sid, p.view, p.ts, parts ? parts.host : "", parts ? parts.path.slice(0, MAX_URL) : "", p.url.slice(0, MAX_URL)],
+        sql: "INSERT INTO session_pages (project_id, session_id, view, ts, host, path, url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+        params: [pid, batch.sid, p.view, p.ts, parts ? parts.host : "", parts ? parts.path.slice(0, MAX_URL) : "", p.url.slice(0, MAX_URL)],
       });
     }
     // The cap below holds under concurrency because the sessions upsert above already holds the session's row lock.
     for (const uid of d.userIds.slice(0, MAX_USERS_PER_SESSION)) {
       statements.push({
-        sql: "INSERT INTO session_users (session_id, user_id) SELECT CAST(? AS TEXT), CAST(? AS TEXT) WHERE (SELECT COUNT(*) FROM session_users WHERE session_id = ?) < ? ON CONFLICT DO NOTHING",
-        params: [batch.sid, uid, batch.sid, MAX_USERS_PER_SESSION],
+        sql: "INSERT INTO session_users (project_id, session_id, user_id) SELECT CAST(? AS TEXT), CAST(? AS TEXT), CAST(? AS TEXT) WHERE (SELECT COUNT(*) FROM session_users WHERE project_id = ? AND session_id = ?) < ? ON CONFLICT DO NOTHING",
+        params: [pid, batch.sid, uid, pid, batch.sid, MAX_USERS_PER_SESSION],
       });
     }
     try {
@@ -167,23 +173,23 @@ export class SessionStore {
 
   async summary(sid: string): Promise<SessionSummary | null> {
     if (!ID_RE.test(sid)) return null;
-    const rows = await this.db.all<SessionRow>(`SELECT ${COLUMNS} FROM sessions WHERE id = ?`, [sid]);
+    const rows = await this.db.all<SessionRow>(`SELECT ${COLUMNS} FROM sessions WHERE project_id = ? AND id = ?`, [this.project, sid]);
     if (!rows.length) return null;
     return toSummary(rows[0], (await this.userIds([sid])).get(sid) || []);
   }
 
   /** Newest sessions first, filtered, paginated by a keyset cursor. */
   async search(q: SessionQuery): Promise<{ sessions: SessionSummary[]; next: string | null }> {
-    const where: string[] = [];
-    const params: Param[] = [];
+    const where: string[] = ["project_id = ?"];
+    const params: Param[] = [this.project];
     const add = (sql: string, ...values: Param[]) => {
       where.push(sql);
       params.push(...values);
     };
-    if (q.user !== undefined) add("id IN (SELECT session_id FROM session_users WHERE user_id = ?)", q.user);
+    if (q.user !== undefined) add("id IN (SELECT session_id FROM session_users WHERE project_id = ? AND user_id = ?)", this.project, q.user);
     if (q.url) {
-      const cond: string[] = [];
-      const values: Param[] = [];
+      const cond: string[] = ["project_id = ?"];
+      const values: Param[] = [this.project];
       if (q.url.host !== null) {
         cond.push("host = ?");
         values.push(q.url.host);
@@ -212,7 +218,7 @@ export class SessionStore {
     if (q.cursor) add("(started_at < ? OR (started_at = ? AND id < ?))", q.cursor.startedAt, q.cursor.startedAt, q.cursor.id);
     params.push(q.limit + 1);
     const rows = await this.db.all<SessionRow>(
-      `SELECT ${COLUMNS} FROM sessions${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY started_at DESC, id DESC LIMIT ?`,
+      `SELECT ${COLUMNS} FROM sessions WHERE ${where.join(" AND ")} ORDER BY started_at DESC, id DESC LIMIT ?`,
       params,
     );
     const page = rows.slice(0, q.limit);
@@ -227,11 +233,15 @@ export class SessionStore {
   private async userIds(sids: string[]): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
     if (!sids.length) return out;
-    // At most 100 ids (the maximum page size), which keeps this within D1's limit of 100 bound parameters.
-    const rows = await this.db.all<{ session_id: string; user_id: string }>(
-      `SELECT session_id, user_id FROM session_users WHERE session_id IN (${sids.map(() => "?").join(", ")}) ORDER BY user_id`,
-      sids,
-    );
+    // Chunks of 50 ids plus the project stay within D1's limit of 100 bound parameters.
+    const rows: { session_id: string; user_id: string }[] = [];
+    for (let i = 0; i < sids.length; i += 50) {
+      const chunk = sids.slice(i, i + 50);
+      rows.push(...await this.db.all<{ session_id: string; user_id: string }>(
+        `SELECT session_id, user_id FROM session_users WHERE project_id = ? AND session_id IN (${chunk.map(() => "?").join(", ")}) ORDER BY user_id`,
+        [this.project, ...chunk],
+      ));
+    }
     for (const r of rows) {
       const list = out.get(r.session_id) || [];
       list.push(r.user_id);
@@ -257,8 +267,8 @@ export class SessionStore {
   async remove(sid: string): Promise<void> {
     if (!ID_RE.test(sid)) return;
     await this.db.batch([
-      { sql: "DELETE FROM sessions WHERE id = ?", params: [sid] },
-      ...["session_users", "session_pages", "batches"].map((t) => ({ sql: `DELETE FROM ${t} WHERE session_id = ?`, params: [sid] })),
+      { sql: "DELETE FROM sessions WHERE project_id = ? AND id = ?", params: [this.project, sid] },
+      ...["session_users", "session_pages", "batches"].map((t) => ({ sql: `DELETE FROM ${t} WHERE project_id = ? AND session_id = ?`, params: [this.project, sid] })),
     ]);
     const keys = await listAll(this.storage, "sessions/" + sid + "/");
     await pool(keys, 8, (k) => this.storage.delete(k));

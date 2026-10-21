@@ -17,6 +17,8 @@ export interface RecorderOptions extends Partial<PrivacyOptions> {
   captureLogs?: boolean;
   /** The site's own id for the signed-in visitor. Same as calling identify() before start. */
   userId?: string;
+  /** Project key, sent as ?project= so a collector serving several projects knows where uploads go. */
+  project?: string;
 }
 
 const MOVE_SAMPLE_MS = 40;
@@ -34,6 +36,13 @@ function randomId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function ingestUrl(endpoint: string, project: string | undefined): string {
+  if (!project) return endpoint;
+  const u = new URL(endpoint, location.href);
+  u.searchParams.set("project", project);
+  return u.href;
 }
 
 function sessionId(timeoutMin: number): string {
@@ -106,9 +115,11 @@ export class Recorder {
   readonly view = randomId();
   private running = false;
   private uid: string | null;
+  private project: string | undefined;
 
   constructor(options: RecorderOptions) {
     this.opts = { sessionTimeoutMin: 30, captureLogs: true, ...options };
+    this.project = options.project || undefined;
     this.privacy = new Privacy(options);
     this.sid = sessionId(this.opts.sessionTimeoutMin);
     this.uid = validUserId(options.userId) ? options.userId : storedUserId(this.sid);
@@ -142,7 +153,7 @@ export class Recorder {
   start() {
     if (this.running) return;
     this.running = true;
-    this.transport = new Transport(this.opts.endpoint, this.sid, this.view);
+    this.transport = new Transport(ingestUrl(this.opts.endpoint, this.project), this.sid, this.view);
     const scrolled: Element[] = [];
     this.mirror = new Mirror(this.privacy, {
       onMutation: (m) => {
@@ -410,7 +421,7 @@ export function identify(userId: string) {
   else pendingUid = uid;
 }
 
-// Auto start from the script tag: data-endpoint plus optional data-user-id, data-mask-all-text, data-mask-all-inputs="false", data-mask-digits.
+// Auto start from the script tag: data-endpoint plus optional data-project, data-user-id, data-mask-all-text, data-mask-all-inputs="false", data-mask-digits.
 const script = document.currentScript as HTMLScriptElement | null;
 if (script && script.dataset.endpoint) {
   const d = script.dataset;
@@ -425,5 +436,6 @@ if (script && script.dataset.endpoint) {
   ];
   for (const [key, v] of pick) if (flag(v) !== undefined) opts[key] = flag(v)!;
   if (d.userId) opts.userId = d.userId.trim();
+  if (d.project) opts.project = d.project.trim();
   start(opts);
 }

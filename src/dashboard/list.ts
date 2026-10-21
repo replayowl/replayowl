@@ -1,12 +1,15 @@
 import type { SessionSummary } from "../shared/protocol.ts";
 import { api, errorText, postJson } from "./api.ts";
+import { config, listPage, replayPage, sessionsApi } from "./config.ts";
 import { OWL_SVG, describeUA, formatDuration, h, hostOf, pathOf, relativeTime, svg } from "./util.ts";
 
 const PLAY = '<svg viewBox="0 0 16 16"><path d="M3 1.5v13L14 8z"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7z"/></svg>';
 
-const brand = document.getElementById("brand")!;
+const brand = document.getElementById("brand") as HTMLAnchorElement;
 brand.prepend(svg(OWL_SVG));
+brand.href = listPage;
+if (!config.demo) document.getElementById("demo-btn")?.remove();
 
 const list = document.getElementById("sessions")!;
 const form = document.getElementById("search-form") as HTMLFormElement;
@@ -95,13 +98,14 @@ function render() {
   document.getElementById("subtitle")!.textContent = query.toString() ? "Matching visits, newest first." : "Recorded visits, newest first.";
   list.innerHTML = "";
   if (!sessions.length && !query.toString()) {
+    const snippet = config.snippet || '<script src="' + location.origin + '/recorder.js" data-endpoint="' + location.origin + '/api/ingest" defer></script>';
     list.append(
       h("div", { class: "empty" },
         svg(OWL_SVG.replace("<svg ", '<svg width="56" height="56" ')),
         h("h2", {}, "No sessions yet"),
-        h("p", {}, "Open the demo shop and click around, then come back here. To record your own site, add the recorder script to its pages:"),
-        h("p", {}, h("code", {}, '<script src="' + location.origin + '/recorder.js" data-endpoint="' + location.origin + '/api/ingest" defer></script>')),
-        h("a", { class: "btn primary", href: "/demo/", target: "_blank", rel: "noopener" }, "Open demo shop"),
+        h("p", {}, (config.demo ? "Open the demo shop and click around, then come back here. " : "") + "To record your own site, add the recorder script to its pages:"),
+        h("p", {}, h("code", {}, snippet)),
+        config.demo ? h("a", { class: "btn primary", href: "/demo/", target: "_blank", rel: "noopener" }, "Open demo shop") : null,
       ),
     );
     return;
@@ -124,7 +128,7 @@ function render() {
       e.preventDefault();
       e.stopPropagation();
       if (!confirm("Delete this session? This cannot be undone.")) return;
-      const res = await api("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" });
+      const res = await api(sessionsApi + "/" + encodeURIComponent(s.id), { method: "DELETE" });
       if (!res.ok) {
         alert("Could not delete the session. " + (await errorText(res)));
         return;
@@ -148,7 +152,7 @@ function render() {
     if (s.userIds.length > 2) user.append(h("small", { class: "muted", title: s.userIds.slice(2).join(", ") }, "+" + (s.userIds.length - 2)));
     if (!s.userIds.length) user.append(h("span", { class: "muted" }, "Anonymous"));
     list.append(
-      h("a", { class: "row", href: "/replay?id=" + encodeURIComponent(s.id) },
+      h("a", { class: "row", href: replayPage(s.id) },
         h("span", { class: "play-dot" }, svg(PLAY)),
         h("span", { class: "entry" }, h("b", {}, pathOf(s.firstUrl) || "/"), h("small", {}, hostOf(s.firstUrl) + (s.lastUrl !== s.firstUrl ? "  to " + pathOf(s.lastUrl) : ""))),
         user,
@@ -156,7 +160,7 @@ function render() {
         h("span", { class: "num" }, formatDuration(s.duration)),
         h("span", { class: "muted hide-sm" }, describeUA(s.ua), h("br"), h("small", { class: "num" }, s.w + " × " + s.h)),
         signals,
-        del,
+        config.canDelete ? del : h("span"),
       ),
     );
   }
@@ -170,7 +174,7 @@ function render() {
 async function fetchPage(cursor: string | null): Promise<{ sessions: SessionSummary[]; next: string | null }> {
   const p = new URLSearchParams(query);
   if (cursor) p.set("cursor", cursor);
-  const res = await api("/api/sessions" + (p.toString() ? "?" + p : ""));
+  const res = await api(sessionsApi + (p.toString() ? "?" + p : ""));
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }
@@ -216,55 +220,60 @@ setInterval(() => {
 }, 5000);
 
 // Account: sign out and password change. Admins who signed in through OAuth may not have a password yet.
-let hasPassword = true;
-function setPasswordMode(has: boolean) {
-  hasPassword = has;
-  const label = has ? "Change password" : "Set password";
-  document.getElementById("account-btn")!.textContent = label;
-  document.getElementById("pw-title")!.textContent = label;
-  document.getElementById("pw-submit")!.textContent = label;
-  document.getElementById("pw-current-field")!.hidden = !has;
-}
-void fetch("/api/auth/status", { credentials: "same-origin" })
-  .then((r) => r.json())
-  .then((s: { password?: boolean }) => setPasswordMode(s.password !== false))
-  .catch(() => {});
-document.getElementById("logout-btn")!.onclick = async () => {
-  await postJson("/api/auth/logout", {});
-  location.href = "/login";
-};
-const dialog = document.getElementById("account") as HTMLDialogElement;
-const pw = (id: string) => document.getElementById(id) as HTMLInputElement;
-const pwError = document.getElementById("pw-error")!;
-const pwOk = document.getElementById("pw-ok")!;
-document.getElementById("account-btn")!.onclick = () => {
-  (document.getElementById("pw-form") as HTMLFormElement).reset();
-  pwError.hidden = true;
-  pwOk.hidden = true;
-  dialog.showModal();
-  pw(hasPassword ? "pw-current" : "pw-new").focus();
-};
-document.getElementById("pw-cancel")!.onclick = () => dialog.close();
-document.getElementById("pw-form")!.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  pwOk.hidden = true;
-  const fail = (msg: string) => {
-    pwError.textContent = msg;
-    pwError.hidden = false;
-  };
-  if (pw("pw-new").value.length < 8) return fail("Use at least 8 characters for the new password.");
-  if (pw("pw-new").value !== pw("pw-confirm").value) return fail("The two new passwords do not match.");
-  const btn = document.getElementById("pw-submit") as HTMLButtonElement;
-  btn.disabled = true;
-  try {
-    const r = await postJson("/api/auth/password", { current: pw("pw-current").value, password: pw("pw-new").value });
-    if (!r.ok) return fail(r.data.error || "Could not change the password (HTTP " + r.status + ").");
-    pwError.hidden = true;
-    pwOk.textContent = hasPassword ? "Password changed." : "Password set. You can now also sign in with it.";
-    pwOk.hidden = false;
-    setPasswordMode(true);
-    (document.getElementById("pw-form") as HTMLFormElement).reset();
-  } finally {
-    btn.disabled = false;
+if (config.account) setupAccount();
+else for (const id of ["account-btn", "logout-btn"]) document.getElementById(id)?.remove();
+
+function setupAccount() {
+  let hasPassword = true;
+  function setPasswordMode(has: boolean) {
+    hasPassword = has;
+    const label = has ? "Change password" : "Set password";
+    document.getElementById("account-btn")!.textContent = label;
+    document.getElementById("pw-title")!.textContent = label;
+    document.getElementById("pw-submit")!.textContent = label;
+    document.getElementById("pw-current-field")!.hidden = !has;
   }
-});
+  void fetch("/api/auth/status", { credentials: "same-origin" })
+    .then((r) => r.json())
+    .then((s: { password?: boolean }) => setPasswordMode(s.password !== false))
+    .catch(() => {});
+  document.getElementById("logout-btn")!.onclick = async () => {
+    await postJson("/api/auth/logout", {});
+    location.href = "/login";
+  };
+  const dialog = document.getElementById("account") as HTMLDialogElement;
+  const pw = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const pwError = document.getElementById("pw-error")!;
+  const pwOk = document.getElementById("pw-ok")!;
+  document.getElementById("account-btn")!.onclick = () => {
+    (document.getElementById("pw-form") as HTMLFormElement).reset();
+    pwError.hidden = true;
+    pwOk.hidden = true;
+    dialog.showModal();
+    pw(hasPassword ? "pw-current" : "pw-new").focus();
+  };
+  document.getElementById("pw-cancel")!.onclick = () => dialog.close();
+  document.getElementById("pw-form")!.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    pwOk.hidden = true;
+    const fail = (msg: string) => {
+      pwError.textContent = msg;
+      pwError.hidden = false;
+    };
+    if (pw("pw-new").value.length < 8) return fail("Use at least 8 characters for the new password.");
+    if (pw("pw-new").value !== pw("pw-confirm").value) return fail("The two new passwords do not match.");
+    const btn = document.getElementById("pw-submit") as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      const r = await postJson("/api/auth/password", { current: pw("pw-current").value, password: pw("pw-new").value });
+      if (!r.ok) return fail(r.data.error || "Could not change the password (HTTP " + r.status + ").");
+      pwError.hidden = true;
+      pwOk.textContent = hasPassword ? "Password changed." : "Password set. You can now also sign in with it.";
+      pwOk.hidden = false;
+      setPasswordMode(true);
+      (document.getElementById("pw-form") as HTMLFormElement).reset();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}

@@ -71,6 +71,8 @@ Add the D1 or Hyperdrive binding (step 3 above) before deploying the new version
 
 Existing recordings are not imported into the database: their parts stay in the bucket, but they do not appear in the session list.
 
+The session tables now carry a project column (see [Projects](#projects)). On the first request after the upgrade, the `sessions`, `session_pages`, `session_users` and `batches` tables are copied into the new layout, with every existing session in the project `default`, in one transaction. Nothing in the bucket changes. With many sessions this first request can take a while; on D1, a copy that runs into the statement time limit is rolled back and retried by the next request, so for a very large D1 database run the upgrade at a quiet time.
+
 ## Admin sign-in
 
 The dashboard has a single admin account and two ways in: a password, and OAuth sign-in through a provider you configure (see the next section). Either one alone is enough, and both can be on at the same time; whoever signs in either way is the same admin.
@@ -153,6 +155,7 @@ Options (written as `data-mask-all-text` and so on on the script tag):
 | `maskDigits` | false | Mask all digits (off by default because it badly hurts replay readability) |
 | `sessionTimeoutMin` | 30 | Idle minutes after which the next page load starts a new session |
 | `captureLogs` | true | Capture console.error / warn, uncaught exceptions and unhandled promise rejections |
+| `project` | none | Project key added to the endpoint as `?project=`, for a collector that serves several projects. A self-hosted Replayowl has one project and ignores it |
 
 Privacy markers on the page:
 
@@ -203,11 +206,25 @@ The database (the same schema on D1 and Postgres) holds everything else:
 | `batches` | One row per uploaded batch, used to skip retried batches and to detect rage clicks that span two batches |
 | `settings` | The admin password hash (when a password is set) and cookie signing secret (the `admin` row) |
 
+Every session table also has a `project_id` column, part of each primary key; see [Projects](#projects).
+
 For replay, the browser downloads the parts directly (6 in parallel, gzip decoded by the browser) and merges and sorts them locally. The server neither parses nor compresses them, so the Worker's CPU cost is close to zero.
 
 API: `POST /api/ingest`; with sign-in, `GET /api/sessions` (list and search, see below), `GET /api/sessions/:id` (summary and part list), `GET /api/sessions/:id/parts/:name`, `DELETE /api/sessions/:id`; for authentication, `GET /api/auth/status`, `POST /api/auth/setup`, `/login`, `/logout`, `/password`, and for OAuth `GET /api/auth/oauth/start?next=<path>` and `GET /api/auth/oauth/callback`.
 
 The player can also be embedded on its own: `createPlayer(container, events, { speed, skipIdle, trail })` returns a `replayer` with `play`, `pause`, `seek`, `setSpeed` and `on("time" | "page" | "state" | "end")`.
+
+## Projects
+
+A self-hosted Replayowl records one project, named `default`, and needs no configuration for it. The building blocks also serve a host with many projects in one database, each with its own object storage (its own bucket, or a key prefix in a shared one):
+
+- `new SessionStore(storage, db, projectId)` (`src/server/store.ts`) reads and writes one project's sessions. The storage must hold only that project, for example an `S3Storage` whose `prefix` names it.
+- `ingestRequest(req, store, { beforeStore })` and `sessionsRequest(req, url, rest, store, { canDelete })` (`src/server/app.ts`) are the collector endpoint and the session API for that store; the host decides which project a request belongs to and who may see it. `beforeStore(batch)` sees each parsed upload first and may refuse it by throwing an `HttpError` (a quota, for example). `errorResponse(err, cors)` turns what they throw into a JSON response.
+- The recorder's `project` option (`data-project`) adds `?project=<key>` to the endpoint, so the host can pick the project before reading the upload.
+- The dashboard pages read an optional `<script type="application/json" id="replayowl-config">` with `base` (prefix of the pages and of `<base>/api/sessions`), `canDelete`, `snippet` (the recorder tag shown while a project is empty), `account` and `demo` (show the admin account menu and the demo shop links). Without it they behave as described above.
+- `build({ out, demo })` from `scripts/build.ts` builds the recorder and dashboard into another directory.
+
+The package exports these as `replayowl/server/store.ts`, `replayowl/server/app.ts`, `replayowl/build` and so on.
 
 ## Search
 

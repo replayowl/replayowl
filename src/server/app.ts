@@ -1,5 +1,6 @@
 // Request handler built only on Web APIs (Request, Response, WebCrypto, compression streams), shared
-// by the Cloudflare Worker entry and the Node server.
+// by the Cloudflare Worker entry and the Node server. The ingest and session handlers are exported on
+// their own too, so a host with its own sign-in and projects can serve them for any project's store.
 
 import type { IngestBatch, ReplayEvent } from "../shared/protocol.ts";
 import {
@@ -13,7 +14,7 @@ import { ID_RE, SessionStore, gunzip } from "./store.ts";
 
 const MAX_BODY = 20 * 1024 * 1024;
 
-const CORS: Record<string, string> = {
+export const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Content-Encoding",
@@ -40,7 +41,7 @@ export interface RequestContext {
   ip?: string;
 }
 
-class HttpError extends Error {
+export class HttpError extends Error {
   status: number;
   constructor(status: number, message: string) {
     super(message);
@@ -48,7 +49,7 @@ class HttpError extends Error {
   }
 }
 
-const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
+export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers } });
 
 const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store" } });
@@ -106,7 +107,7 @@ function parseBatch(text: string): IngestBatch {
   return batch;
 }
 
-async function readJson<T>(req: Request): Promise<T> {
+export async function readJson<T>(req: Request): Promise<T> {
   if (!/application\/json/i.test(req.headers.get("content-type") || "")) throw new HttpError(415, "expected application/json");
   try {
     return (await req.json()) as T;
@@ -131,27 +132,6 @@ export function createApp(opts: AppOptions) {
     if (admin.age < 1000) return false;
     const latest = await admin.get(true);
     return !!latest && (await checkSession(latest, cookie));
-  }
-
-  /** State-changing admin calls must come from this origin (cookies are SameSite=Lax as a second layer). */
-  function sameOrigin(req: Request, url: URL) {
-    const origin = req.headers.get("origin");
-    if (origin && origin !== url.origin) throw new HttpError(403, "cross-origin request refused");
-  }
-
-  async function ingest(req: Request): Promise<Response> {
-    const raw = await readBody(req);
-    // Detect gzip by magic bytes: proxies may strip or keep Content-Encoding.
-    const isGzip = raw.length > 2 && raw[0] === 0x1f && raw[1] === 0x8b;
-    let text: string;
-    try {
-      text = new TextDecoder().decode(isGzip ? await gunzip(raw, MAX_BODY * 5) : raw);
-    } catch {
-      throw new HttpError(400, "bad gzip body");
-    }
-    const batch = parseBatch(text);
-    await sessions.ingest(batch, isGzip ? raw : undefined);
-    return new Response(null, { status: 204, headers: CORS });
   }
 
   /** GET /api/auth/oauth/start: remembers state and PKCE verifier in a short-lived cookie, then leaves for the provider. */
@@ -286,40 +266,7 @@ export function createApp(opts: AppOptions) {
 
   async function sessionsApi(req: Request, url: URL): Promise<Response> {
     if (!(await isAuthed(req))) throw new HttpError(401, "Sign in to view sessions.");
-    const rest = url.pathname.slice("/api/sessions".length);
-    if (rest === "" || rest === "/") {
-      if (req.method !== "GET") throw new HttpError(405, "method not allowed");
-      let query: SessionQuery;
-      try {
-        query = parseSearch(url.searchParams);
-      } catch (err) {
-        if (err instanceof SearchError) throw new HttpError(400, err.message);
-        throw err;
-      }
-      return json(await sessions.search(query));
-    }
-    const m = /^\/([^/]+)(?:\/parts\/([^/]+))?$/.exec(rest);
-    if (!m) throw new HttpError(404, "not found");
-    const sid = m[1];
-    if (m[2]) {
-      if (req.method !== "GET") throw new HttpError(405, "method not allowed");
-      const bytes = await sessions.part(sid, m[2]);
-      if (!bytes) throw new HttpError(404, "part not found");
-      // Parts never change once written. encodeBody "manual" tells Workers the body is already gzipped.
-      return new Response(bytes as BodyInit, {
-        headers: { "Content-Type": "application/json", "Content-Encoding": "gzip", "Cache-Control": "private, max-age=31536000, immutable" },
-        encodeBody: "manual",
-      } as ResponseInit);
-    }
-    if (req.method === "DELETE") {
-      sameOrigin(req, url);
-      await sessions.remove(sid);
-      return new Response(null, { status: 204 });
-    }
-    if (req.method !== "GET") throw new HttpError(405, "method not allowed");
-    const summary = await sessions.summary(sid);
-    if (!summary) throw new HttpError(404, "This session does not exist or was deleted.");
-    return json({ summary, parts: await sessions.parts(sid) });
+    return sessionsRequest(req, url, url.pathname.slice("/api/sessions".length), sessions);
   }
 
   async function page(req: Request, file: string, needsAuth: boolean): Promise<Response> {
@@ -337,11 +284,7 @@ export function createApp(opts: AppOptions) {
     const url = new URL(req.url);
     const p = url.pathname;
     try {
-      if (p === "/api/ingest") {
-        if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-        if (req.method !== "POST") throw new HttpError(405, "method not allowed");
-        return await ingest(req);
-      }
+      if (p === "/api/ingest") return await ingestRequest(req, sessions);
       if (p.startsWith("/api/auth/")) return await authApi(req, url, ctx);
       if (p === "/api/sessions" || p.startsWith("/api/sessions/")) return await sessionsApi(req, url);
       if (p.startsWith("/api/")) throw new HttpError(404, "not found");
@@ -357,11 +300,91 @@ export function createApp(opts: AppOptions) {
       if (p.endsWith("/")) return await opts.asset(p + "index.html", req);
       return await opts.asset(p, req);
     } catch (err) {
-      const status = err instanceof HttpError ? err.status : 500;
-      if (status === 500) console.error(err);
-      const message = err instanceof HttpError ? err.message : "Internal error";
-      const headers = p === "/api/ingest" ? CORS : {};
-      return json({ error: message }, status, headers);
+      return errorResponse(err, p === "/api/ingest");
     }
   };
+}
+
+/** JSON error for a thrown HttpError, or a logged 500 for anything else. `cors` for the ingest endpoint. */
+export function errorResponse(err: unknown, cors = false): Response {
+  const status = err instanceof HttpError ? err.status : 500;
+  if (status === 500) console.error(err);
+  const message = err instanceof HttpError ? err.message : "Internal error";
+  return json({ error: message }, status, cors ? CORS : {});
+}
+
+/** State-changing calls must come from this origin (cookies are SameSite=Lax as a second layer). */
+export function sameOrigin(req: Request, url: URL) {
+  const origin = req.headers.get("origin");
+  if (origin && origin !== url.origin) throw new HttpError(403, "cross-origin request refused");
+}
+
+export interface IngestRequestOptions {
+  /** Runs after the upload is parsed and before it is stored; throw an HttpError to refuse it (quotas). */
+  beforeStore?(batch: IngestBatch): Promise<void>;
+}
+
+/** The collector endpoint (OPTIONS and POST) for one project. Throws HttpError for bad uploads. */
+export async function ingestRequest(req: Request, store: SessionStore, opts: IngestRequestOptions = {}): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  if (req.method !== "POST") throw new HttpError(405, "method not allowed");
+  const raw = await readBody(req);
+  // Detect gzip by magic bytes: proxies may strip or keep Content-Encoding.
+  const isGzip = raw.length > 2 && raw[0] === 0x1f && raw[1] === 0x8b;
+  let text: string;
+  try {
+    text = new TextDecoder().decode(isGzip ? await gunzip(raw, MAX_BODY * 5) : raw);
+  } catch {
+    throw new HttpError(400, "bad gzip body");
+  }
+  const batch = parseBatch(text);
+  if (opts.beforeStore) await opts.beforeStore(batch);
+  await store.ingest(batch, isGzip ? raw : undefined);
+  return new Response(null, { status: 204, headers: CORS });
+}
+
+export interface SessionsRequestOptions {
+  /** False refuses DELETE with 403, for people who may only watch. */
+  canDelete?: boolean;
+}
+
+/**
+ * The session list, summaries, parts and deletion for one project. `rest` is the path after the
+ * sessions root ("", "/<id>" or "/<id>/parts/<name>"). The caller has already checked sign-in.
+ */
+export async function sessionsRequest(req: Request, url: URL, rest: string, store: SessionStore, opts: SessionsRequestOptions = {}): Promise<Response> {
+  if (rest === "" || rest === "/") {
+    if (req.method !== "GET") throw new HttpError(405, "method not allowed");
+    let query: SessionQuery;
+    try {
+      query = parseSearch(url.searchParams);
+    } catch (err) {
+      if (err instanceof SearchError) throw new HttpError(400, err.message);
+      throw err;
+    }
+    return json(await store.search(query));
+  }
+  const m = /^\/([^/]+)(?:\/parts\/([^/]+))?$/.exec(rest);
+  if (!m) throw new HttpError(404, "not found");
+  const sid = m[1];
+  if (m[2]) {
+    if (req.method !== "GET") throw new HttpError(405, "method not allowed");
+    const bytes = await store.part(sid, m[2]);
+    if (!bytes) throw new HttpError(404, "part not found");
+    // Parts never change once written. encodeBody "manual" tells Workers the body is already gzipped.
+    return new Response(bytes as BodyInit, {
+      headers: { "Content-Type": "application/json", "Content-Encoding": "gzip", "Cache-Control": "private, max-age=31536000, immutable" },
+      encodeBody: "manual",
+    } as ResponseInit);
+  }
+  if (req.method === "DELETE") {
+    sameOrigin(req, url);
+    if (opts.canDelete === false) throw new HttpError(403, "You may not delete sessions in this project.");
+    await store.remove(sid);
+    return new Response(null, { status: 204 });
+  }
+  if (req.method !== "GET") throw new HttpError(405, "method not allowed");
+  const summary = await store.summary(sid);
+  if (!summary) throw new HttpError(404, "This session does not exist or was deleted.");
+  return json({ summary, parts: await store.parts(sid) });
 }

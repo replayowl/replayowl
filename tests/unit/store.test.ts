@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createApp } from "../../src/server/app.ts";
+import { createApp, errorResponse, ingestRequest, sessionsRequest } from "../../src/server/app.ts";
 import { withSchema } from "../../src/server/db.ts";
 import { FsStorage } from "../../src/server/fs-storage.ts";
 import { PgDb } from "../../src/server/pg.ts";
@@ -151,6 +151,55 @@ test("session store on postgres", async (t) => {
       // A new upload after delete starts the session over.
       await store.ingest(batch("sessionA1", "viewA0002", 0, [meta(30000, "https://shop.test/again", "viewA0002")]));
       assert.equal((await store.summary("sessionA1"))!.pages, 1);
+    });
+
+    await t.test("exported handlers serve one project's store and can refuse deletion", async () => {
+      const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "ro-store-"));
+      try {
+        const other = new SessionStore(new FsStorage(otherDir), withSchema(db), "project-three");
+        const call = async (fn: () => Promise<Response>) => fn().catch((err) => errorResponse(err));
+        const up = batch("sessionG7", "viewG0001", 0, [meta(80000, "https://three.test/", "viewG0001")]);
+        const posted = await call(() => ingestRequest(new Request("http://x/collect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(up) }), other));
+        assert.equal(posted.status, 204);
+        assert.equal(posted.headers.get("access-control-allow-origin"), "*");
+        const url = new URL("http://x/p/three/api/sessions/sessionG7");
+        const get = await call(() => sessionsRequest(new Request(url), url, "/sessionG7", other));
+        assert.equal((await get.json()).summary.firstUrl, "https://three.test/");
+        const list = await call(() => sessionsRequest(new Request(url), url, "", other));
+        assert.deepEqual((await list.json()).sessions.map((s: { id: string }) => s.id), ["sessionG7"]);
+        const refused = await call(() => sessionsRequest(new Request(url, { method: "DELETE" }), url, "/sessionG7", other, { canDelete: false }));
+        assert.equal(refused.status, 403);
+        assert.ok(await other.summary("sessionG7"));
+        const deleted = await call(() => sessionsRequest(new Request(url, { method: "DELETE" }), url, "/sessionG7", other));
+        assert.equal(deleted.status, 204);
+        assert.equal(await other.summary("sessionG7"), null);
+        assert.equal(await store.summary("sessionG7"), null);
+      } finally {
+        fs.rmSync(otherDir, { recursive: true, force: true });
+      }
+    });
+
+    await t.test("projects sharing the database see only their own sessions", async () => {
+      const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "ro-store-"));
+      try {
+        const other = new SessionStore(new FsStorage(otherDir), withSchema(db), "project-two");
+        // The same session id as one in the default project, with different content.
+        await other.ingest(batch("sessionC3", "viewX0001", 0, [meta(70000, "https://two.test/", "viewX0001"), ev(70001, { k: "identify", uid: "u-42" }), click(70100, 1)]));
+        assert.deepEqual((await other.search({ limit: 30 })).sessions.map((s) => s.id), ["sessionC3"]);
+        assert.deepEqual((await other.search({ limit: 30, user: "u-42" })).sessions.map((s) => s.id), ["sessionC3"]);
+        assert.deepEqual((await other.search({ limit: 30, url: { host: "shop.test", path: "/", mode: "prefix" } })).sessions, []);
+        assert.equal((await other.summary("sessionC3"))!.firstUrl, "https://two.test/");
+        assert.equal((await other.summary("sessionB2")), null);
+        assert.equal((await store.summary("sessionC3"))!.firstUrl, "https://other.test/");
+        assert.equal((await store.summary("sessionC3"))!.userIds.length, 5);
+        assert.deepEqual(await ids({ user: "u-42" }), ["sessionB2"]);
+        await other.remove("sessionC3");
+        assert.equal(await other.summary("sessionC3"), null);
+        assert.equal((await store.summary("sessionC3"))!.pages, 1);
+        assert.equal((await store.parts("sessionC3")).length, 2);
+      } finally {
+        fs.rmSync(otherDir, { recursive: true, force: true });
+      }
     });
   } finally {
     await db.close();
