@@ -191,7 +191,8 @@ export function createApp(opts: AppOptions) {
     if (op === "status" && req.method === "GET") {
       // Fresh so the sign-in page never offers setup after the password was set in another isolate.
       const cfg = await admin.get(true);
-      const password = hasPassword(cfg);
+      // With OAuth on, a password left from before is ignored: OAuth is the only way in.
+      const password = !oauth && hasPassword(cfg);
       return json({
         configured: password || !!oauth,
         password,
@@ -209,11 +210,10 @@ export function createApp(opts: AppOptions) {
     sameOrigin(req, url);
 
     if (op === "setup") {
+      if (oauth) throw new HttpError(409, "Sign in with " + opts.oauth!.name + ".");
       const body = await readJson<{ password?: string; token?: string }>(req);
       const current = await admin.get(true);
       if (hasPassword(current)) throw new HttpError(409, "The admin password is already set. Sign in instead.");
-      // With OAuth on, only a signed-in admin may add a password (from the dashboard).
-      if (oauth) throw new HttpError(409, "Sign in with " + opts.oauth!.name + ", then set a password from the dashboard if you want one.");
       if (opts.setupToken && body.token !== opts.setupToken) {
         await sleep(500);
         throw new HttpError(403, "The setup token is not correct.");
@@ -230,6 +230,7 @@ export function createApp(opts: AppOptions) {
     if (op === "login") {
       const wait = limiter.blocked(ip);
       if (wait) return json({ error: "Too many attempts. Try again in " + wait + " seconds." }, 429, { "Retry-After": String(wait) });
+      if (oauth) throw new HttpError(409, "Sign in with " + opts.oauth!.name + ".");
       const body = await readJson<{ password?: string }>(req);
       const cfg = await admin.get(true);
       if (!hasPassword(cfg)) throw new HttpError(409, "No admin password is set yet.");
@@ -246,11 +247,11 @@ export function createApp(opts: AppOptions) {
 
     if (op === "password") {
       if (!(await isAuthed(req))) throw new HttpError(401, "Sign in first.");
+      if (oauth) throw new HttpError(409, "Sign-in goes through " + opts.oauth!.name + "; there is no admin password.");
       const body = await readJson<{ current?: string; password?: string }>(req);
       const cfg = await admin.get(true);
-      if (!cfg) throw new HttpError(409, "No admin password is set yet.");
-      // Signed in through OAuth with no password yet: the first one needs no current password.
-      if (hasPassword(cfg) && !(await verifyPassword(cfg, String(body.current || "")))) {
+      if (!hasPassword(cfg)) throw new HttpError(409, "No admin password is set yet.");
+      if (!(await verifyPassword(cfg!, String(body.current || "")))) {
         await sleep(400);
         throw new HttpError(403, "The current password is not correct.");
       }
@@ -296,7 +297,6 @@ export function createApp(opts: AppOptions) {
         if (await isAuthed(req)) return redirect("/");
         return await page(req, "/dashboard/login.html", false);
       }
-      if (p === "/demo") return redirect("/demo/");
       if (p.endsWith("/")) return await opts.asset(p + "index.html", req);
       return await opts.asset(p, req);
     } catch (err) {
@@ -363,6 +363,10 @@ export async function sessionsRequest(req: Request, url: URL, rest: string, stor
       throw err;
     }
     return json(await store.search(query));
+  }
+  if (rest === "/sites") {
+    if (req.method !== "GET") throw new HttpError(405, "method not allowed");
+    return json({ sites: await store.sites() });
   }
   const m = /^\/([^/]+)(?:\/parts\/([^/]+))?$/.exec(rest);
   if (!m) throw new HttpError(404, "not found");

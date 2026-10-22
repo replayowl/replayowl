@@ -2,7 +2,7 @@
 
 Website: [replayowl.com](https://replayowl.com) · Source: [github.com/replayowl/replayowl](https://github.com/replayowl/replayowl)
 
-Self-hosted session recording and replay for websites. A recorder of about 20 KB with zero runtime dependencies, replays that look exactly like what the visitor saw, search by user, page and behavior, and a dashboard protected by an admin password, OAuth 2.0 / OpenID Connect sign-in, or both.
+Self-hosted session recording and replay for websites. A recorder of about 20 KB with zero runtime dependencies, replays that look exactly like what the visitor saw, search by user, page and behavior, and a dashboard protected by an admin password or OAuth 2.0 / OpenID Connect sign-in.
 
 This image runs the Node server: the collector endpoint, the dashboard and the recorder script. Session summaries are kept in Postgres; recordings are stored as files in `/data`, or in any S3-compatible storage when `S3_BUCKET` is set.
 
@@ -14,7 +14,7 @@ docker run -d --name replayowl -p 8790:8790 -v replayowl-data:/data \
   replayowl/replayowl:latest
 ```
 
-Open http://127.0.0.1:8790/, set the admin password, then try the demo shop at http://127.0.0.1:8790/demo/ and replay the session in the dashboard. The tables are created on the first request.
+Open http://127.0.0.1:8790/, set the admin password, then add the recorder script shown in the empty session list to your site and replay its sessions in the dashboard. The tables are created on the first request.
 
 ## Docker Compose
 

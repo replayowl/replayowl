@@ -11,12 +11,10 @@ export interface DashboardConfig {
   snippet: string | null;
   /** Account menu (password, sign out) of the self-hosted admin. */
   account: boolean;
-  /** Links to the demo shop. */
-  demo: boolean;
 }
 
 function read(): DashboardConfig {
-  const config: DashboardConfig = { base: "", canDelete: true, snippet: null, account: true, demo: true };
+  const config: DashboardConfig = { base: "", canDelete: true, snippet: null, account: true };
   const el = document.getElementById("replayowl-config");
   if (!el) return config;
   try {
@@ -25,7 +23,6 @@ function read(): DashboardConfig {
     if (typeof v.canDelete === "boolean") config.canDelete = v.canDelete;
     if (typeof v.snippet === "string") config.snippet = v.snippet;
     if (typeof v.account === "boolean") config.account = v.account;
-    if (typeof v.demo === "boolean") config.demo = v.demo;
   } catch {
     /* keep the defaults */
   }

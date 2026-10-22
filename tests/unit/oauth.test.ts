@@ -31,6 +31,7 @@ test("allowlist matches emails, domains and subjects", () => {
   assert.equal(isAllowed({ sub: "AbC", email: null }, allow), true);
   assert.equal(isAllowed({ sub: "abc", email: null }, allow), false, "subjects are case sensitive");
   assert.equal(isAllowed({ sub: "1", email: null }, allow), false);
+  assert.equal(isAllowed({ sub: "1", email: null }, ["*"]), true);
 });
 
 function stubProvider(opts: { discovery?: Record<string, unknown>; user: Record<string, unknown> }) {

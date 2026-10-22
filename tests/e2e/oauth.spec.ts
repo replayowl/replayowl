@@ -1,5 +1,5 @@
-// OAuth sign-in against a mock OpenID Connect provider: discovery, PKCE, allowlist, errors, and adding
-// a password after an OAuth-only start.
+// OAuth sign-in against a mock OpenID Connect provider: discovery, PKCE, allowlist, errors, and no
+// admin password while OAuth is on.
 
 import { expect, test } from "@playwright/test";
 import crypto from "node:crypto";
@@ -109,7 +109,7 @@ test.afterAll(async () => {
   await stop();
 });
 
-test("OAuth only: sign in, add a password, then both work", async ({ browser }) => {
+test("OAuth only: sign in, no password to set or use", async ({ browser }) => {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
 
@@ -131,28 +131,16 @@ test("OAuth only: sign in, add a password, then both work", async ({ browser }) 
   const cookies = await ctx.cookies();
   expect(cookies.find((c) => c.name === "ro_oauth")).toBeUndefined();
 
-  // Set a password without a current one.
+  // Signed in, there is still no password to add.
   await page.goto(base + "/");
-  await expect(page.locator("#account-btn")).toHaveText("Set password");
-  await page.click("#account-btn");
-  await expect(page.locator("#pw-current-field")).toBeHidden();
-  await page.fill("#pw-new", "oauth-then-pass");
-  await page.fill("#pw-confirm", "oauth-then-pass");
-  await page.click("#pw-submit");
-  await expect(page.locator("#pw-ok")).toContainText("Password set");
-  await page.click("#pw-cancel");
-  await expect(page.locator("#account-btn")).toHaveText("Change password");
+  await expect(page.locator("#logout-btn")).toBeVisible();
+  await expect(page.locator("#account-btn")).toBeHidden();
+  const add = await page.request.post(base + "/api/auth/password", { headers: { Origin: base }, data: { password: "oauth-then-pass" } });
+  expect(add.status()).toBe(409);
 
-  // Sign out: both ways in are offered now.
   await page.click("#logout-btn");
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.locator("#oauth")).toBeVisible();
-  await expect(page.locator("#or")).toBeVisible();
-  await expect(page.locator("#confirm-field")).toBeHidden();
-  await page.fill("#password", "oauth-then-pass");
-  await page.click("#submit");
-  await expect(page).toHaveURL(base + "/");
-  await page.click("#logout-btn");
+  await expect(page.locator("#form")).toBeHidden();
   await page.click("#oauth");
   await expect(page).toHaveURL(base + "/");
   await ctx.close();

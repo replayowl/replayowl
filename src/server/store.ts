@@ -187,12 +187,15 @@ export class SessionStore {
       params.push(...values);
     };
     if (q.user !== undefined) add("id IN (SELECT session_id FROM session_users WHERE project_id = ? AND user_id = ?)", this.project, q.user);
+    // A site and a page without a host of its own must match on the same page view.
+    const host = q.url && q.url.host !== null ? q.url.host : q.site;
+    if (q.site !== undefined && (!q.url || host !== q.site)) add("id IN (SELECT session_id FROM session_pages WHERE project_id = ? AND host = ?)", this.project, q.site);
     if (q.url) {
       const cond: string[] = ["project_id = ?"];
       const values: Param[] = [this.project];
-      if (q.url.host !== null) {
+      if (host !== undefined) {
         cond.push("host = ?");
-        values.push(q.url.host);
+        values.push(host);
       }
       if (q.url.mode === "exact") {
         cond.push("path = ?");
@@ -228,6 +231,15 @@ export class SessionStore {
       sessions: page.map((r) => toSummary(r, users.get(r.id) || [])),
       next: rows.length > q.limit && last ? encodeCursor({ startedAt: last.started_at, id: last.id }) : null,
     };
+  }
+
+  /** Hosts that recorded page views, with how many sessions visited each, most visited first. */
+  async sites(limit = 200): Promise<{ host: string; sessions: number }[]> {
+    const rows = await this.db.all<{ host: string; n: number | string }>(
+      "SELECT host, COUNT(DISTINCT session_id) AS n FROM session_pages WHERE project_id = ? AND host <> '' GROUP BY host ORDER BY n DESC, host LIMIT ?",
+      [this.project, limit],
+    );
+    return rows.map((r) => ({ host: r.host, sessions: Number(r.n) }));
   }
 
   private async userIds(sids: string[]): Promise<Map<string, string[]>> {

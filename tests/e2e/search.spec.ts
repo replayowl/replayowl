@@ -89,6 +89,30 @@ test("search by user, page and signals", async ({ browser }) => {
   await expect(viewer.locator("a.row")).toHaveCount(1);
   await expect(viewer.locator("a.row .user-link")).toHaveCount(0);
 
+  // The site filter lists the recorded hosts, is remembered like a project and survives Clear.
+  const host = new URL(base).host;
+  expect((await (await viewer.request.get(base + "/api/sessions/sites")).json()).sites).toEqual([{ host, sessions: 2 }]);
+  expect(await users("site=other.test")).toEqual([]);
+  expect(await users("site=" + host + "&url=/demo/product")).toEqual(["ada-1"]);
+  await viewer.goto(base + "/");
+  await expect(viewer.locator("#q-site")).toBeVisible();
+  await expect(viewer.locator("#q-site option[value='" + host + "']")).toHaveText(host + " (2)");
+  await viewer.selectOption("#q-site", host);
+  await expect(viewer).toHaveURL(base + "/?site=" + encodeURIComponent(host));
+  await expect(viewer.locator("a.row")).toHaveCount(2);
+  await expect(viewer.locator("#clear-btn")).toBeHidden();
+  await viewer.goto(base + "/");
+  await expect(viewer).toHaveURL(base + "/?site=" + encodeURIComponent(host));
+  await expect(viewer.locator("#q-site")).toHaveValue(host);
+  await viewer.locator(".user-link", { hasText: "ada-1" }).click();
+  await expect(viewer).toHaveURL(base + "/?site=" + encodeURIComponent(host) + "&user=ada-1");
+  await viewer.click("#clear-btn");
+  await expect(viewer).toHaveURL(base + "/?site=" + encodeURIComponent(host));
+  await viewer.selectOption("#q-site", "");
+  await expect(viewer).toHaveURL(base + "/");
+  await viewer.goto(base + "/");
+  await expect(viewer).toHaveURL(base + "/");
+
   // A search the server rejects shows its message.
   await viewer.goto(base + "/?minDuration=abc");
   await expect(viewer.locator(".empty-panel")).toContainText("minDuration");

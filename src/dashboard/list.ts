@@ -9,7 +9,6 @@ const TRASH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColo
 const brand = document.getElementById("brand") as HTMLAnchorElement;
 brand.prepend(svg(OWL_SVG));
 brand.href = listPage;
-if (!config.demo) document.getElementById("demo-btn")?.remove();
 
 const list = document.getElementById("sessions")!;
 const form = document.getElementById("search-form") as HTMLFormElement;
@@ -20,12 +19,36 @@ const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 const select = (id: string) => document.getElementById(id) as HTMLSelectElement;
 
 // Query parameter, form control. Text and number fields map one to one.
-const FIELDS: [string, string][] = [["user", "q-user"], ["url", "q-url"], ["minDuration", "q-min-dur"], ["maxDuration", "q-max-dur"], ["minPages", "q-min-pages"], ["device", "q-device"]];
+const FIELDS: [string, string][] = [["site", "q-site"], ["user", "q-user"], ["url", "q-url"], ["minDuration", "q-min-dur"], ["maxDuration", "q-max-dur"], ["minPages", "q-min-pages"], ["device", "q-device"]];
 const TIMES: [string, string][] = [["from", "q-from"], ["to", "q-to"]];
 const PANEL = ["from", "to", "minDuration", "maxDuration", "minPages", "device", "errors", "rage"];
 
+// The site works like a project: it is remembered, survives Clear, and a visit without a query reopens it.
+const SITE_KEY = "replayowl.site";
+function storedSite(): string {
+  try {
+    return localStorage.getItem(SITE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function storeSite(site: string) {
+  try {
+    if (site) localStorage.setItem(SITE_KEY, site);
+    else localStorage.removeItem(SITE_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+/** Only the site, which alone does not count as a search. */
+const siteOnly = (p: URLSearchParams) => !p.toString() || (p.has("site") && [...p.keys()].length === 1);
+
 let query = new URLSearchParams(location.search);
 query.delete("cursor");
+if (!query.toString() && storedSite()) {
+  query.set("site", storedSite());
+  history.replaceState(null, "", "?" + query);
+}
 let sessions: SessionSummary[] = [];
 let nextCursor: string | null = null;
 let pagesLoaded = 1;
@@ -52,6 +75,7 @@ function formQuery(): URLSearchParams {
 }
 
 function fillForm(p: URLSearchParams) {
+  addSiteOption(p.get("site") || "");
   for (const [name, id] of FIELDS) (document.getElementById(id) as HTMLInputElement | HTMLSelectElement).value = p.get(name) || "";
   select("q-mode").value = p.get("urlMode") || "prefix";
   for (const [name, id] of TIMES) {
@@ -61,7 +85,29 @@ function fillForm(p: URLSearchParams) {
   input("q-errors").checked = p.get("errors") === "1";
   input("q-rage").checked = p.get("rage") === "1";
   setPanel(PANEL.some((k) => p.has(k)));
-  clearBtn.hidden = !p.toString();
+  clearBtn.hidden = siteOnly(p);
+}
+
+/** Keeps a site that is in the query selectable before (or without) the site list. */
+function addSiteOption(site: string, sessions?: number) {
+  const box = select("q-site");
+  if (!site) return;
+  let opt = [...box.options].find((o) => o.value === site);
+  if (!opt) opt = box.appendChild(h("option", { value: site }, site));
+  if (sessions !== undefined) opt.textContent = site + " (" + sessions + ")";
+  box.hidden = false;
+}
+
+async function loadSites() {
+  try {
+    const res = await api(sessionsApi + "/sites");
+    if (!res.ok) return;
+    const { sites } = (await res.json()) as { sites: { host: string; sessions: number }[] };
+    for (const s of sites) addSiteOption(s.host, s.sessions);
+    select("q-site").value = query.get("site") || "";
+  } catch {
+    /* the site filter stays hidden */
+  }
 }
 
 function setPanel(open: boolean) {
@@ -71,8 +117,9 @@ function setPanel(open: boolean) {
 
 function search(p: URLSearchParams) {
   query = p;
+  storeSite(p.get("site") || "");
   history.pushState(null, "", p.toString() ? "?" + p : location.pathname);
-  clearBtn.hidden = !p.toString();
+  clearBtn.hidden = siteOnly(p);
   void load();
 }
 
@@ -81,9 +128,12 @@ form.addEventListener("submit", (e) => {
   search(formQuery());
 });
 moreBtn.onclick = () => setPanel(more.hidden);
+select("q-site").onchange = () => search(formQuery());
 clearBtn.onclick = () => {
-  fillForm(new URLSearchParams());
-  search(new URLSearchParams());
+  const p = new URLSearchParams();
+  if (query.get("site")) p.set("site", query.get("site")!);
+  fillForm(p);
+  search(p);
 };
 // Back and forward between searches, and back from a replay when the page is restored from cache.
 addEventListener("popstate", () => {
@@ -92,10 +142,12 @@ addEventListener("popstate", () => {
   void load();
 });
 fillForm(query);
+void loadSites();
 
 function render() {
   const shown = sessions;
-  document.getElementById("subtitle")!.textContent = query.toString() ? "Matching visits, newest first." : "Recorded visits, newest first.";
+  const site = query.get("site");
+  document.getElementById("subtitle")!.textContent = !siteOnly(query) ? "Matching visits, newest first." : site ? "Recorded visits to " + site + ", newest first." : "Recorded visits, newest first.";
   list.innerHTML = "";
   if (!sessions.length && !query.toString()) {
     const snippet = config.snippet || '<script src="' + location.origin + '/recorder.js" data-endpoint="' + location.origin + '/api/ingest" defer></script>';
@@ -103,9 +155,8 @@ function render() {
       h("div", { class: "empty" },
         svg(OWL_SVG.replace("<svg ", '<svg width="56" height="56" ')),
         h("h2", {}, "No sessions yet"),
-        h("p", {}, (config.demo ? "Open the demo shop and click around, then come back here. " : "") + "To record your own site, add the recorder script to its pages:"),
+        h("p", {}, "To record your site, add the recorder script to its pages:"),
         h("p", {}, h("code", {}, snippet)),
-        config.demo ? h("a", { class: "btn primary", href: "/demo/", target: "_blank", rel: "noopener" }, "Open demo shop") : null,
       ),
     );
     return;
@@ -143,6 +194,7 @@ function render() {
         e.preventDefault();
         e.stopPropagation();
         const p = new URLSearchParams();
+        if (query.get("site")) p.set("site", query.get("site")!);
         p.set("user", uid);
         fillForm(p);
         search(p);
@@ -216,26 +268,19 @@ async function loadMore(btn: HTMLButtonElement) {
 void load();
 // Sessions grow while visitors are active; refresh the first page quietly unless the user is searching or paging.
 setInterval(() => {
-  if (document.visibilityState === "visible" && !query.toString() && pagesLoaded === 1) void load();
+  if (document.visibilityState === "visible" && siteOnly(query) && pagesLoaded === 1) void load();
 }, 5000);
 
-// Account: sign out and password change. Admins who signed in through OAuth may not have a password yet.
+// Account: sign out and password change. With OAuth sign-in there is no password to change.
 if (config.account) setupAccount();
 else for (const id of ["account-btn", "logout-btn"]) document.getElementById(id)?.remove();
 
 function setupAccount() {
-  let hasPassword = true;
-  function setPasswordMode(has: boolean) {
-    hasPassword = has;
-    const label = has ? "Change password" : "Set password";
-    document.getElementById("account-btn")!.textContent = label;
-    document.getElementById("pw-title")!.textContent = label;
-    document.getElementById("pw-submit")!.textContent = label;
-    document.getElementById("pw-current-field")!.hidden = !has;
-  }
+  const accountBtn = document.getElementById("account-btn")!;
+  accountBtn.hidden = true;
   void fetch("/api/auth/status", { credentials: "same-origin" })
     .then((r) => r.json())
-    .then((s: { password?: boolean }) => setPasswordMode(s.password !== false))
+    .then((s: { password?: boolean }) => (accountBtn.hidden = !s.password))
     .catch(() => {});
   document.getElementById("logout-btn")!.onclick = async () => {
     await postJson("/api/auth/logout", {});
@@ -245,12 +290,12 @@ function setupAccount() {
   const pw = (id: string) => document.getElementById(id) as HTMLInputElement;
   const pwError = document.getElementById("pw-error")!;
   const pwOk = document.getElementById("pw-ok")!;
-  document.getElementById("account-btn")!.onclick = () => {
+  accountBtn.onclick = () => {
     (document.getElementById("pw-form") as HTMLFormElement).reset();
     pwError.hidden = true;
     pwOk.hidden = true;
     dialog.showModal();
-    pw(hasPassword ? "pw-current" : "pw-new").focus();
+    pw("pw-current").focus();
   };
   document.getElementById("pw-cancel")!.onclick = () => dialog.close();
   document.getElementById("pw-form")!.addEventListener("submit", async (e) => {
@@ -268,9 +313,7 @@ function setupAccount() {
       const r = await postJson("/api/auth/password", { current: pw("pw-current").value, password: pw("pw-new").value });
       if (!r.ok) return fail(r.data.error || "Could not change the password (HTTP " + r.status + ").");
       pwError.hidden = true;
-      pwOk.textContent = hasPassword ? "Password changed." : "Password set. You can now also sign in with it.";
       pwOk.hidden = false;
-      setPasswordMode(true);
       (document.getElementById("pw-form") as HTMLFormElement).reset();
     } finally {
       btn.disabled = false;

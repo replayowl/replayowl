@@ -43,7 +43,8 @@ button, input, select { font: inherit; color: inherit; }
 .search { flex: 1; min-width: 220px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .filters .select, .more input, .more select { height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; }
 .filters .btn { height: 38px; }
-.filters .btn[hidden] { display: none; }
+.filters .btn[hidden], .filters .select[hidden] { display: none; }
+.filters #q-site { max-width: 260px; }
 .more { flex-basis: 100%; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .more[hidden] { display: none; }
 .more label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-soft); }
@@ -181,8 +182,8 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 5
 .form-ok { margin: 0 0 14px; padding: 8px 12px; border-radius: 8px; background: #e6f4ec; color: #1f6a43; font-size: 13px; }
 .form-ok[hidden] { display: none; }
 .load-more { display: flex; justify-content: center; padding: 14px; border-top: 1px solid var(--line); }
+.topbar .btn[hidden] { display: none; }
 @media (max-width: 640px) {
   .topbar { gap: 8px; padding: 0 12px; }
   .topbar .btn.ghost-dark { padding: 0 10px; font-size: 13px; }
-  .topbar a.btn.ghost-dark[href="/demo/"] { display: none; }
 }

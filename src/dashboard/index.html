@@ -11,7 +11,6 @@
 <header class="topbar">
   <a class="brand" href="/" id="brand">Replayowl</a>
   <span class="grow"></span>
-  <a class="btn ghost-dark" href="/demo/" target="_blank" rel="noopener" id="demo-btn">Open demo shop</a>
   <button class="btn ghost-dark" id="account-btn" type="button">Change password</button>
   <button class="btn ghost-dark" id="logout-btn" type="button">Sign out</button>
 </header>
@@ -38,6 +37,9 @@
     </div>
   </div>
   <form class="filters" id="search-form" role="search" novalidate>
+    <select class="select" id="q-site" aria-label="Site" hidden>
+      <option value="">All sites</option>
+    </select>
     <input class="search" id="q-user" type="search" placeholder="User ID" aria-label="User ID" autocomplete="off">
     <input class="search" id="q-url" type="search" placeholder="Visited page, e.g. /checkout" aria-label="Visited page" autocomplete="off">
     <select class="select" id="q-mode" aria-label="How the page matches">

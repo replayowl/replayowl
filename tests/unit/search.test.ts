@@ -38,6 +38,8 @@ test("search parameters are parsed and validated", () => {
     { limit: 100, user: "u-1", url: { host: null, path: "/checkout", mode: "exact" }, from: 10, to: 20, minDuration: 5000, maxDuration: 60000, minPages: 2, errors: true, rage: true, device: "mobile" },
   );
   assert.deepEqual(p("url=/x").url, { host: null, path: "/x", mode: "prefix" });
+  assert.equal(p("site=%20Shop.Example.com:8080%20").site, "shop.example.com:8080");
+  for (const bad of ["shop.test/x", "a@b.test", "[", "x?y"]) assert.throws(() => p("site=" + encodeURIComponent(bad)), SearchError, bad);
   assert.equal(p("errors=0").errors, undefined);
   const cursor = encodeCursor({ startedAt: 1700000000000, id: "sessionA1" });
   assert.deepEqual(p("cursor=" + encodeURIComponent(cursor)).cursor, { startedAt: 1700000000000, id: "sessionA1" });

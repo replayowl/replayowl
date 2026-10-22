@@ -18,7 +18,7 @@ export interface OAuthConfig {
   tokenUrl?: string;
   userinfoUrl?: string;
   scopes: string;
-  /** Emails, "@domain" for a whole email domain, or "sub:<subject>" for a provider account id. */
+  /** Emails, "@domain" for a whole email domain, "sub:<subject>" for a provider account id, or "*" for everyone. */
   allow: string[];
   /** How the client authenticates at the token endpoint; picked from discovery when unset. */
   tokenAuth?: "basic" | "post";
@@ -77,6 +77,8 @@ export function isAllowed(id: OAuthIdentity, allow: string[]): boolean {
   const email = id.email ? id.email.toLowerCase() : null;
   for (const raw of allow) {
     const entry = raw.toLowerCase();
+    // "*" trusts the provider's own access control, e.g. a self-hosted server with a per-app allowlist.
+    if (entry === "*") return true;
     if (entry.startsWith("sub:")) {
       if (raw.slice(4) === id.sub) return true;
     } else if (entry.startsWith("@")) {

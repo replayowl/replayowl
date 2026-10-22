@@ -118,6 +118,11 @@ test("session store on postgres", async (t) => {
       assert.deepEqual(await ids({ url: { host: null, path: "lant", mode: "contains" } }), ["sessionB2"]);
       assert.deepEqual(await ids({ url: { host: "other.test", path: "/", mode: "prefix" } }), ["sessionC3"]);
       assert.deepEqual(await ids({ url: { host: "shop.test", path: "/", mode: "prefix" } }), ["sessionB2", "sessionA1"]);
+      assert.deepEqual(await ids({ site: "shop.test" }), ["sessionB2", "sessionA1"]);
+      assert.deepEqual(await ids({ site: "other.test" }), ["sessionC3"]);
+      assert.deepEqual(await ids({ site: "shop.test", url: { host: null, path: "/checkout", mode: "prefix" } }), ["sessionB2"]);
+      assert.deepEqual(await ids({ site: "other.test", url: { host: null, path: "/checkout", mode: "prefix" } }), [], "site and page match one page view");
+      assert.deepEqual(await store.sites(), [{ host: "shop.test", sessions: 2 }, { host: "other.test", sessions: 1 }]);
       assert.deepEqual(await ids({ errors: true }), ["sessionA1"]);
       assert.deepEqual(await ids({ rage: true }), ["sessionA1"]);
       assert.deepEqual(await ids({ device: "mobile" }), ["sessionB2"]);

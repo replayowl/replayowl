@@ -18,6 +18,8 @@ export interface Cursor {
 
 export interface SessionQuery {
   user?: string;
+  /** Host (with port, if any) of a page the session visited. */
+  site?: string;
   url?: { host: string | null; path: string; mode: UrlMode };
   from?: number;
   to?: number;
@@ -94,6 +96,13 @@ export function parseSearch(params: URLSearchParams): SessionQuery {
   const user = (params.get("user") || "").trim();
   if (user.length > MAX_USER_ID) throw new SearchError("user must be at most " + MAX_USER_ID + " characters.");
   if (user) q.user = user;
+
+  const site = (params.get("site") || "").trim();
+  if (site) {
+    const parts = site.length <= MAX_URL && !/[/?#\\@]/.test(site) ? splitUrl("https://" + site) : null;
+    if (!parts) throw new SearchError("site must be a host such as shop.example.com.");
+    q.site = parts.host;
+  }
 
   const mode = params.get("urlMode") || "prefix";
   if (!MODES.includes(mode)) throw new SearchError("urlMode must be prefix, exact or contains.");

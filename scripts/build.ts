@@ -1,6 +1,6 @@
 // Builds dist/public, the static root served by Workers Static Assets and by the Node server:
-//   recorder.js, dashboard/ (pages, styles, bundles), demo/ (the demo shop).
-// Usage: node scripts/build.ts [--watch]. Other packages can import build() to put the same files elsewhere.
+//   recorder.js, dashboard/ (pages, styles, bundles), and with --demo the demo shop the end-to-end tests record.
+// Usage: node scripts/build.ts [--watch] [--demo]. Other packages can import build() to put the same files elsewhere.
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,19 +8,19 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DASH_SRC = path.join(ROOT, "src/dashboard");
-const DEMO_SRC = path.join(ROOT, "demo");
+const DEMO_SRC = path.join(ROOT, "tests/demo");
 
 export interface BuildOptions {
   /** Output directory, emptied first. Defaults to dist/public. */
   out?: string;
   watch?: boolean;
-  /** Copy the demo shop. */
+  /** Copy the demo shop from tests/demo to demo/, for the end-to-end tests. */
   demo?: boolean;
 }
 
 export async function build(opts: BuildOptions = {}): Promise<void> {
   const out = opts.out || path.join(ROOT, "dist/public");
-  const demo = opts.demo !== false;
+  const demo = !!opts.demo;
 
   const copyStatic = () => {
     fs.mkdirSync(path.join(out, "dashboard"), { recursive: true });
@@ -69,5 +69,5 @@ export async function build(opts: BuildOptions = {}): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await build({ watch: process.argv.includes("--watch") });
+  await build({ watch: process.argv.includes("--watch"), demo: process.argv.includes("--demo") });
 }

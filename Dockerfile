@@ -7,7 +7,6 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY scripts ./scripts
 COPY src ./src
-COPY demo ./demo
 RUN npm run build
 
 FROM node:24-slim
