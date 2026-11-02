@@ -1,6 +1,7 @@
 {
   "name": "replayowl",
   "version": "0.1.0",
+  "packageManager": "pnpm@11.18.0",
   "private": true,
   "type": "module",
   "description": "Session recording and replay with a focus on playback quality",

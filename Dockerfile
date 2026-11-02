@@ -2,8 +2,9 @@
 
 FROM node:24-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm install -g pnpm@11.18.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY tsconfig.json ./
 COPY scripts ./scripts
 COPY src ./src
@@ -12,8 +13,9 @@ RUN npm run build
 FROM node:24-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8790 DATA_DIR=/data
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm install -g pnpm@11.18.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 COPY src ./src
 COPY --from=build /app/dist/public ./dist/public
 RUN mkdir -p /data && chown node:node /data
